@@ -1,6 +1,6 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { AccessToken } from "https://esm.sh/livekit-server-sdk@1.2.8"
+import { AccessToken } from 'https://esm.sh/v135/livekit-server-sdk@1.2.8'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
