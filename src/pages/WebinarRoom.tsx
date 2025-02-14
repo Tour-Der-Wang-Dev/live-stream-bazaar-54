@@ -71,17 +71,35 @@ const WebinarRoom = () => {
       }
 
       console.log('Enviando solicitud al endpoint de LiveKit');
-      const { data, error } = await supabase.functions.invoke('generate-livekit-token', {
-        body: {
-          roomName: webinar.roomName,
-          participantName: participantName
-        }
-      });
-
-      if (error) {
-        console.error('Error response:', error);
-        throw new Error(error.message || 'Error al generar el token de acceso');
+      
+      // Obtenemos la sesión actual
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No hay sesión activa');
       }
+
+      const response = await fetch(
+        'https://yghrfxxfvuqasvldjdzk.supabase.co/functions/v1/generate-livekit-token',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            roomName: webinar.roomName,
+            participantName: participantName
+          })
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Error al generar el token de acceso');
+      }
+
+      const data = await response.json();
 
       if (!data || !data.token) {
         throw new Error('No se recibió el token de acceso');
