@@ -4,10 +4,9 @@ import { AccessToken } from 'livekit-server-sdk';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Max-Age': '86400',
-  'Access-Control-Allow-Credentials': 'true',
 };
 
 serve(async (req) => {
@@ -20,7 +19,8 @@ serve(async (req) => {
   }
 
   try {
-    const { roomName, participantName } = await req.json();
+    const body = await req.json();
+    const { roomName, participantName } = body;
     console.log('Received request for room:', roomName, 'participant:', participantName);
 
     if (!roomName || !participantName) {

@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -73,12 +72,9 @@ const WebinarRoom = () => {
 
       console.log('Enviando solicitud al endpoint de LiveKit');
       const { data, error } = await supabase.functions.invoke('generate-livekit-token', {
-        body: JSON.stringify({
+        body: {
           roomName: webinar.roomName,
           participantName: participantName
-        }),
-        headers: {
-          'Content-Type': 'application/json',
         }
       });
 
