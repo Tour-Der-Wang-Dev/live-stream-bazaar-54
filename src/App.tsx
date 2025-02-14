@@ -8,6 +8,10 @@ import CreateWebinar from "./pages/CreateWebinar";
 import WebinarRoom from "./pages/WebinarRoom";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+// Create a client
+const queryClient = new QueryClient();
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
@@ -32,16 +36,18 @@ function App() {
   }
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/auth" element={!isAuthenticated ? <Auth /> : <Navigate to="/" />} />
-        <Route path="/" element={isAuthenticated ? <Index /> : <Navigate to="/auth" />} />
-        <Route path="/create" element={isAuthenticated ? <CreateWebinar /> : <Navigate to="/auth" />} />
-        <Route path="/webinar/:id" element={isAuthenticated ? <WebinarRoom /> : <Navigate to="/auth" />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-      <Toaster />
-    </Router>
+    <QueryClientProvider client={queryClient}>
+      <Router>
+        <Routes>
+          <Route path="/auth" element={!isAuthenticated ? <Auth /> : <Navigate to="/" />} />
+          <Route path="/" element={isAuthenticated ? <Index /> : <Navigate to="/auth" />} />
+          <Route path="/create" element={isAuthenticated ? <CreateWebinar /> : <Navigate to="/auth" />} />
+          <Route path="/webinar/:id" element={isAuthenticated ? <WebinarRoom /> : <Navigate to="/auth" />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+        <Toaster />
+      </Router>
+    </QueryClientProvider>
   );
 }
 
