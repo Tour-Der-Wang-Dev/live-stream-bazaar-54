@@ -71,11 +71,18 @@ const WebinarRoom = () => {
         throw new Error('Nombre de sala no encontrado');
       }
 
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No hay sesión activa');
+      }
+
+      console.log('Enviando solicitud al endpoint de LiveKit');
       const response = await fetch('https://yghrfxxfvuqasvldjdzk.supabase.co/functions/v1/generate-livekit-token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabase.auth.getSession()?.access_token}`,
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
           roomName: webinar.roomName,
