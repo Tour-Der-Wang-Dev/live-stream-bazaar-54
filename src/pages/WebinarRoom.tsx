@@ -44,20 +44,38 @@ const WebinarRoom = () => {
   const [error, setError] = useState("");
   const webinar = mockWebinars.find(w => w.id === id);
   const [isJoining, setIsJoining] = useState(false);
+  const [liveKitUrl, setLiveKitUrl] = useState("");
+
+  useEffect(() => {
+    const fetchLiveKitUrl = async () => {
+      try {
+        const response = await fetch('https://my-livekit-app.livekit.cloud/connection-info');
+        const data = await response.json();
+        setLiveKitUrl(data.url);
+      } catch (err) {
+        console.error('Error al obtener la URL de LiveKit:', err);
+        setLiveKitUrl('wss://my-livekit-app.livekit.cloud');
+      }
+    };
+
+    fetchLiveKitUrl();
+  }, []);
 
   const generateToken = async (participantName: string) => {
     try {
-      // Obtener las credenciales de LiveKit desde Supabase
+      console.log('Generando token para:', participantName);
       const { data: secrets, error: secretsError } = await supabase
         .from('secrets')
         .select('name, value')
         .in('name', ['LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET']);
 
       if (secretsError) {
+        console.error('Error al obtener secretos:', secretsError);
         throw new Error('Error al obtener las credenciales de LiveKit');
       }
 
       if (!secrets || secrets.length < 2) {
+        console.error('Secretos no encontrados:', secrets);
         throw new Error('No se encontró la configuración de LiveKit');
       }
 
@@ -65,10 +83,15 @@ const WebinarRoom = () => {
       const apiSecret = secrets.find(s => s.name === 'LIVEKIT_API_SECRET')?.value;
 
       if (!apiKey || !apiSecret) {
+        console.error('Credenciales no encontradas:', { apiKey, apiSecret });
         throw new Error('No se encontraron las credenciales de LiveKit');
       }
 
-      // Generar el token usando las credenciales
+      console.log('Haciendo petición al servidor con:', {
+        roomName: webinar?.roomName,
+        participantName
+      });
+
       const response = await fetch('https://my-livekit-app.livekit.cloud/token', {
         method: 'POST',
         headers: {
@@ -83,10 +106,13 @@ const WebinarRoom = () => {
       });
 
       if (!response.ok) {
+        const errorData = await response.text();
+        console.error('Error en la respuesta del servidor:', errorData);
         throw new Error('Error al generar el token');
       }
 
       const { token } = await response.json();
+      console.log('Token generado exitosamente');
       return token;
     } catch (err) {
       console.error('Error al generar el token:', err);
@@ -97,7 +123,9 @@ const WebinarRoom = () => {
   const handleJoinWebinar = async (values: LocalUserChoices) => {
     try {
       setIsJoining(true);
+      console.log('Iniciando proceso de unión al webinar para:', values.username);
       const newToken = await generateToken(values.username);
+      console.log('Token obtenido, configurando estado');
       setToken(newToken);
       setUserName(values.username);
     } catch (err) {
@@ -131,7 +159,7 @@ const WebinarRoom = () => {
       {token ? (
         <LiveKitRoom
           token={token}
-          serverUrl="wss://my-livekit-app.livekit.cloud"
+          serverUrl={liveKitUrl}
           connect={true}
           video={true}
           audio={true}
@@ -162,6 +190,11 @@ const WebinarRoom = () => {
               />
               {error && (
                 <p className="text-red-500 mt-4 text-center">{error}</p>
+              )}
+              {isJoining && (
+                <p className="text-blue-500 mt-4 text-center">
+                  Conectando al webinar...
+                </p>
               )}
             </Card>
           </motion.div>
