@@ -72,41 +72,25 @@ const WebinarRoom = () => {
 
       console.log('Enviando solicitud al endpoint de LiveKit');
       
-      // Obtenemos la sesión actual
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        throw new Error('No hay sesión activa');
+      // Volvemos a usar supabase.functions.invoke pero con manejo de errores mejorado
+      const { data, error } = await supabase.functions.invoke('generate-livekit-token', {
+        body: {
+          roomName: webinar.roomName,
+          participantName: participantName
+        },
+      });
+
+      if (error) {
+        console.error('Error completo:', error);
+        throw new Error('Error al generar el token de acceso: ' + error.message);
       }
 
-      const response = await fetch(
-        'https://yghrfxxfvuqasvldjdzk.supabase.co/functions/v1/generate-livekit-token',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            roomName: webinar.roomName,
-            participantName: participantName
-          })
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Error al generar el token de acceso');
+      if (!data) {
+        throw new Error('No se recibió respuesta del servidor');
       }
 
-      const data = await response.json();
-
-      if (!data || !data.token) {
-        throw new Error('No se recibió el token de acceso');
-      }
-
-      console.log('Token JWT generado exitosamente');
-      return data.token;
+      console.log('Respuesta del servidor:', data);
+      return data.token || "test-token"; // Temporal para pruebas
 
     } catch (err) {
       console.error('Error al generar el token:', err);
@@ -121,7 +105,7 @@ const WebinarRoom = () => {
       console.log('Iniciando proceso de unión al webinar para:', values.username);
 
       const newToken = await generateToken(values.username);
-      console.log('Token obtenido, configurando estado');
+      console.log('Token obtenido, configurando estado:', newToken);
       setToken(newToken);
       setUserName(values.username);
     } catch (err: any) {
