@@ -17,6 +17,13 @@ import { useToast } from "@/components/ui/use-toast";
 import { useQuery } from "@tanstack/react-query";
 
 const fetchWebinar = async (id: string): Promise<Webinar | null> => {
+  console.log('Fetching webinar with ID:', id); // Agregamos log para debug
+  
+  if (!id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    console.error('ID inválido:', id);
+    return null;
+  }
+
   const { data, error } = await supabase
     .from('webinars')
     .select('*')
