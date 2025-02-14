@@ -1,11 +1,6 @@
 
-// Follow this setup guide to integrate the Deno language server with your editor:
-// https://deno.land/manual/getting_started/setup_your_environment
-// This enables autocomplete, go to definition, etc.
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
-console.log("Hello from Functions!");
+import { AccessToken } from 'https://esm.sh/livekit-server-sdk@1.2.7';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,22 +11,47 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  // This is needed if you're planning to invoke your function from a browser.
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Log the method and URL for debugging
-    console.log(`Method: ${req.method}`);
-    console.log(`URL: ${req.url}`);
-    console.log('Headers:', JSON.stringify(Object.fromEntries(req.headers.entries()), null, 2));
+    const { roomName, participantName } = await req.json();
+    
+    if (!roomName || !participantName) {
+      throw new Error('Room name and participant name are required');
+    }
+
+    console.log(`Generating token for room: ${roomName}, participant: ${participantName}`);
+
+    const apiKey = Deno.env.get('LIVEKIT_API_KEY');
+    const apiSecret = Deno.env.get('LIVEKIT_API_SECRET');
+
+    if (!apiKey || !apiSecret) {
+      throw new Error('LiveKit credentials not configured');
+    }
+
+    // Create a new token
+    const at = new AccessToken(apiKey, apiSecret, {
+      identity: participantName,
+      name: participantName,
+    });
+
+    // Grant appropriate permissions
+    at.addGrant({
+      room: roomName,
+      roomJoin: true,
+      canPublish: true,
+      canSubscribe: true,
+    });
+
+    // Generate the JWT token
+    const token = at.toJwt();
+    console.log('Token generated successfully');
 
     return new Response(
       JSON.stringify({
-        message: "Success from generate-livekit-token function",
-        timestamp: new Date().toISOString(),
-        token: "test-token"
+        token: token
       }),
       {
         headers: corsHeaders,
@@ -39,9 +59,12 @@ serve(async (req) => {
       },
     )
   } catch (error) {
-    console.error(error);
+    console.error('Error:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        error: error.message,
+        details: error.toString()
+      }),
       {
         headers: corsHeaders,
         status: 500,
