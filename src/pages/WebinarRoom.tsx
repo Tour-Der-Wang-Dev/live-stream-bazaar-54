@@ -98,6 +98,7 @@ const WebinarRoom = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'text/plain'  // Cambiado para aceptar texto plano
         },
         body: JSON.stringify({
           apiKey,
@@ -113,7 +114,22 @@ const WebinarRoom = () => {
         throw new Error(`Error al generar el token: ${errorData}`);
       }
 
-      const { token } = await response.json();
+      // Intentamos primero parsear como JSON, si falla, usamos el texto directamente como token
+      let token;
+      const responseText = await response.text();
+      try {
+        const jsonResponse = JSON.parse(responseText);
+        token = jsonResponse.token;
+      } catch (e) {
+        // Si no es JSON válido, asumimos que el texto es el token directamente
+        console.log('Respuesta no es JSON, usando texto como token');
+        token = responseText;
+      }
+
+      if (!token) {
+        throw new Error('Token no recibido del servidor');
+      }
+
       console.log('Token generado exitosamente');
       return token;
     } catch (err) {
