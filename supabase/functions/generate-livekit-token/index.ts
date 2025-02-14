@@ -1,8 +1,6 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-
-// Importamos AccessToken desde una URL más simple y estable
-import { AccessToken } from "https://esm.sh/livekit-server-sdk"
+import { AccessToken } from "https://esm.sh/livekit-server-sdk@1.2.7"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,7 +11,6 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -21,15 +18,10 @@ serve(async (req) => {
   try {
     console.log('Function started');
     
-    // Log environment variables (without values)
-    const envVars = Object.keys(Deno.env.toObject());
-    console.log('Available environment variables:', envVars);
-
-    // Validate request body
     let body;
     try {
       body = await req.json();
-      console.log('Request body received:', JSON.stringify(body));
+      console.log('Request body:', JSON.stringify(body));
     } catch (e) {
       console.error('Error parsing request body:', e);
       throw new Error('Invalid JSON in request body');
@@ -43,7 +35,6 @@ serve(async (req) => {
 
     console.log(`Processing request for room: ${roomName}, participant: ${participantName}`);
 
-    // Get LiveKit credentials
     const apiKey = Deno.env.get('LIVEKIT_API_KEY');
     const apiSecret = Deno.env.get('LIVEKIT_API_SECRET');
 
@@ -52,28 +43,28 @@ serve(async (req) => {
       throw new Error('LiveKit credentials not configured');
     }
 
-    console.log('LiveKit credentials found');
-
     try {
-      // Create access token
-      const at = new AccessToken(apiKey, apiSecret, {
-        identity: participantName
+      const token = new AccessToken(apiKey, apiSecret, {
+        identity: participantName,
       });
 
-      at.addGrant({ 
-        room: roomName,
+      token.addGrant({
         roomJoin: true,
+        room: roomName,
         canPublish: true,
-        canSubscribe: true
+        canSubscribe: true,
       });
 
-      const token = at.toJwt();
+      const jwt = token.toJwt();
       console.log('Token generated successfully');
 
       return new Response(
-        JSON.stringify({ token }),
+        JSON.stringify({ token: jwt }),
         { 
-          headers: corsHeaders,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+          },
           status: 200 
         }
       );
@@ -90,7 +81,10 @@ serve(async (req) => {
         details: error.toString()
       }),
       {
-        headers: corsHeaders,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        },
         status: 500
       }
     );

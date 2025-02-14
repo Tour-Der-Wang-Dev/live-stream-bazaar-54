@@ -51,7 +51,7 @@ const WebinarRoom = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [token, setToken] = useState("");
+  const [token, setToken] = useState<string>("");
   const [userName, setUserName] = useState("");
   const [error, setError] = useState("");
   const [isJoining, setIsJoining] = useState(false);
@@ -63,7 +63,7 @@ const WebinarRoom = () => {
     enabled: !!id
   });
 
-  const generateToken = async (participantName: string) => {
+  const generateToken = async (participantName: string): Promise<string> => {
     try {
       console.log('Generando token para:', participantName);
       
@@ -85,11 +85,12 @@ const WebinarRoom = () => {
         throw new Error('Error al generar el token de acceso: ' + error.message);
       }
 
-      if (!data?.token) {
-        throw new Error('No se recibió un token válido del servidor');
+      if (!data?.token || typeof data.token !== 'string') {
+        console.error('Token inválido recibido:', data);
+        throw new Error('Token inválido recibido del servidor');
       }
 
-      console.log('Token recibido:', data.token);
+      console.log('Token recibido (primeros 20 caracteres):', data.token.substring(0, 20));
       return data.token;
 
     } catch (err) {
@@ -105,7 +106,7 @@ const WebinarRoom = () => {
       console.log('Iniciando proceso de unión al webinar para:', values.username);
 
       const newToken = await generateToken(values.username);
-      console.log('Token obtenido:', newToken);
+      console.log('Token válido obtenido, longitud:', newToken.length);
       setToken(newToken);
       setUserName(values.username);
     } catch (err: any) {
