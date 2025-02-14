@@ -13,6 +13,7 @@ import { Webinar } from "@/types/webinar";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { createClient } from '@supabase/supabase-js';
+import { useToast } from "@/components/ui/use-toast";
 
 // En una versión real, esto vendría de una API
 const mockWebinars: Webinar[] = [
@@ -37,23 +38,46 @@ const mockWebinars: Webinar[] = [
 const WebinarRoom = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [token, setToken] = useState("");
   const [userName, setUserName] = useState("");
   const [error, setError] = useState("");
   const webinar = mockWebinars.find(w => w.id === id);
   const [isJoining, setIsJoining] = useState(false);
 
-  const supabase = createClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-  );
+  // Verificar que las variables de entorno estén disponibles
+  useEffect(() => {
+    if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+      toast({
+        variant: "destructive",
+        title: "Error de configuración",
+        description: "La configuración de Supabase no está completa. Por favor, conecta tu proyecto a Supabase."
+      });
+    }
+  }, []);
+
+  // Inicializar Supabase solo si las variables de entorno están disponibles
+  const supabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY
+    ? createClient(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_ANON_KEY
+      )
+    : null;
 
   const generateToken = async (participantName: string) => {
     try {
-      const { data: secrets } = await supabase
+      if (!supabase) {
+        throw new Error('Supabase no está configurado correctamente');
+      }
+
+      const { data: secrets, error: secretsError } = await supabase
         .from('secrets')
         .select('name, value')
         .in('name', ['LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET']);
+
+      if (secretsError) {
+        throw new Error('Error al obtener las credenciales de LiveKit');
+      }
 
       if (!secrets || secrets.length < 2) {
         throw new Error('LiveKit configuration not found');
@@ -100,6 +124,11 @@ const WebinarRoom = () => {
     } catch (err) {
       console.error('Error joining webinar:', err);
       setError('Error al unirse al webinar. Por favor, intente nuevamente.');
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo unir al webinar. Por favor, verifica la configuración de Supabase y LiveKit."
+      });
     } finally {
       setIsJoining(false);
     }
