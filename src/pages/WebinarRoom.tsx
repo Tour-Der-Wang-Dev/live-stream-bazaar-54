@@ -44,22 +44,7 @@ const WebinarRoom = () => {
   const [error, setError] = useState("");
   const webinar = mockWebinars.find(w => w.id === id);
   const [isJoining, setIsJoining] = useState(false);
-  const [liveKitUrl, setLiveKitUrl] = useState("");
-
-  useEffect(() => {
-    const fetchLiveKitUrl = async () => {
-      try {
-        const response = await fetch('https://my-livekit-app.livekit.cloud/connection-info');
-        const data = await response.json();
-        setLiveKitUrl(data.url);
-      } catch (err) {
-        console.error('Error al obtener la URL de LiveKit:', err);
-        setLiveKitUrl('wss://my-livekit-app.livekit.cloud');
-      }
-    };
-
-    fetchLiveKitUrl();
-  }, []);
+  const [liveKitUrl, setLiveKitUrl] = useState("wss://my-livekit-app.livekit.cloud");
 
   const generateToken = async (participantName: string) => {
     try {
