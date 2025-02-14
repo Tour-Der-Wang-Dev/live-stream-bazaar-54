@@ -15,8 +15,10 @@ serve(async (req) => {
 
   try {
     const { roomName, participantName } = await req.json();
+    console.log('Received request for room:', roomName, 'participant:', participantName);
 
     if (!roomName || !participantName) {
+      console.error('Missing required parameters');
       return new Response(
         JSON.stringify({ error: 'Room name and participant name are required' }),
         { 
@@ -31,6 +33,7 @@ serve(async (req) => {
     const apiSecret = Deno.env.get('LIVEKIT_API_SECRET');
 
     if (!apiKey || !apiSecret) {
+      console.error('LiveKit configuration missing');
       return new Response(
         JSON.stringify({ error: 'LiveKit configuration missing' }),
         { 
@@ -40,6 +43,8 @@ serve(async (req) => {
       );
     }
 
+    console.log('Creating access token for room:', roomName);
+    
     // Create access token
     const at = new AccessToken(apiKey, apiSecret, {
       identity: participantName,
@@ -57,6 +62,7 @@ serve(async (req) => {
 
     // Generate JWT token
     const token = at.toJwt();
+    console.log('Token generated successfully');
 
     // Return the token
     return new Response(
@@ -68,6 +74,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
+    console.error('Error in generate-livekit-token:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
       { 
