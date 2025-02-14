@@ -5,6 +5,7 @@ import {
   LiveKitRoom,
   VideoConference,
   PreJoin,
+  LocalUserChoices,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
 import { motion } from "framer-motion";
@@ -12,7 +13,6 @@ import { Webinar } from "@/types/webinar";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { createClient } from '@supabase/supabase-js';
-import { AccessToken } from "livekit-server-sdk";
 
 // En una versión real, esto vendría de una API
 const mockWebinars: Webinar[] = [
@@ -91,12 +91,12 @@ const WebinarRoom = () => {
     }
   };
 
-  const handleJoinWebinar = async (username: string) => {
+  const handleJoinWebinar = async (values: LocalUserChoices) => {
     try {
       setIsJoining(true);
-      const newToken = await generateToken(username);
+      const newToken = await generateToken(values.username);
       setToken(newToken);
-      setUserName(username);
+      setUserName(values.username);
     } catch (err) {
       console.error('Error joining webinar:', err);
       setError('Error al unirse al webinar. Por favor, intente nuevamente.');
