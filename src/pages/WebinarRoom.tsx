@@ -89,22 +89,33 @@ const WebinarRoom = () => {
         throw new Error('No se encontraron las credenciales de LiveKit');
       }
 
+      if (!webinar?.roomName) {
+        throw new Error('Nombre de sala no encontrado');
+      }
+
       console.log('Haciendo petición al servidor con:', {
-        roomName: webinar?.roomName,
+        roomName: webinar.roomName,
         participantName
       });
 
+      // Modificamos la URL para incluir el schema HTTPS
       const response = await fetch('https://juliawebinars-brslrae2.livekit.cloud/token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'text/plain'  // Cambiado para aceptar texto plano
         },
         body: JSON.stringify({
           apiKey,
           apiSecret,
-          roomName: webinar?.roomName,
+          roomName: webinar.roomName,
           participantName,
+          // Agregamos opciones adicionales para el token
+          metadata: JSON.stringify({
+            name: participantName,
+          }),
+          ttl: 86400, // Token válido por 24 horas
+          canPublish: true,
+          canSubscribe: true,
         }),
       });
 
@@ -114,24 +125,17 @@ const WebinarRoom = () => {
         throw new Error(`Error al generar el token: ${errorData}`);
       }
 
-      // Intentamos primero parsear como JSON, si falla, usamos el texto directamente como token
-      let token;
       const responseText = await response.text();
-      try {
-        const jsonResponse = JSON.parse(responseText);
-        token = jsonResponse.token;
-      } catch (e) {
-        // Si no es JSON válido, asumimos que el texto es el token directamente
-        console.log('Respuesta no es JSON, usando texto como token');
-        token = responseText;
+      console.log('Respuesta del servidor:', responseText);
+
+      // Si la respuesta es un token JWT válido, debería empezar con "ey"
+      if (!responseText.startsWith('ey')) {
+        console.error('Respuesta no válida del servidor:', responseText);
+        throw new Error('El servidor no devolvió un token JWT válido');
       }
 
-      if (!token) {
-        throw new Error('Token no recibido del servidor');
-      }
-
-      console.log('Token generado exitosamente');
-      return token;
+      console.log('Token JWT válido generado');
+      return responseText;
     } catch (err) {
       console.error('Error al generar el token:', err);
       throw err;
@@ -143,10 +147,6 @@ const WebinarRoom = () => {
       setIsJoining(true);
       setError('');
       console.log('Iniciando proceso de unión al webinar para:', values.username);
-      
-      if (!webinar?.roomName) {
-        throw new Error('No se encontró el nombre de la sala del webinar');
-      }
 
       const newToken = await generateToken(values.username);
       console.log('Token obtenido, configurando estado');
@@ -208,14 +208,14 @@ const WebinarRoom = () => {
             transition={{ duration: 0.5 }}
           >
             <Card className="max-w-2xl mx-auto p-8">
-              <h1 className="text-3xl font-bold mb-4">{webinar.title}</h1>
-              <p className="text-gray-600 dark:text-gray-300 mb-6">{webinar.description}</p>
+              <h1 className="text-3xl font-bold mb-4">{webinar?.title}</h1>
+              <p className="text-gray-600 dark:text-gray-300 mb-6">{webinar?.description}</p>
               <div className="mb-6">
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Anfitrión: {webinar.hostName}
+                  Anfitrión: {webinar?.hostName}
                 </p>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Fecha: {webinar.startTime.toLocaleDateString()}
+                  Fecha: {webinar?.startTime.toLocaleDateString()}
                 </p>
               </div>
               <PreJoin
