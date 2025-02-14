@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -72,7 +73,6 @@ const WebinarRoom = () => {
 
       console.log('Enviando solicitud al endpoint de LiveKit');
       
-      // Volvemos a usar supabase.functions.invoke pero con manejo de errores mejorado
       const { data, error } = await supabase.functions.invoke('generate-livekit-token', {
         body: {
           roomName: webinar.roomName,
@@ -85,12 +85,12 @@ const WebinarRoom = () => {
         throw new Error('Error al generar el token de acceso: ' + error.message);
       }
 
-      if (!data) {
-        throw new Error('No se recibió respuesta del servidor');
+      if (!data?.token) {
+        throw new Error('No se recibió un token válido del servidor');
       }
 
-      console.log('Respuesta del servidor:', data);
-      return data.token || "test-token"; // Temporal para pruebas
+      console.log('Token recibido:', data.token);
+      return data.token;
 
     } catch (err) {
       console.error('Error al generar el token:', err);
@@ -105,7 +105,7 @@ const WebinarRoom = () => {
       console.log('Iniciando proceso de unión al webinar para:', values.username);
 
       const newToken = await generateToken(values.username);
-      console.log('Token obtenido, configurando estado:', newToken);
+      console.log('Token obtenido:', newToken);
       setToken(newToken);
       setUserName(values.username);
     } catch (err: any) {
