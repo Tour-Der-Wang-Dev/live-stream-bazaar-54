@@ -1,6 +1,6 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { AccessToken } from 'https://esm.sh/livekit-server-sdk@1.2.7';
+import { AccessToken } from 'https://esm.sh/v135/livekit-server-sdk@1.2.7';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,7 +16,19 @@ serve(async (req) => {
   }
 
   try {
-    const { roomName, participantName } = await req.json();
+    // Log the incoming request for debugging
+    console.log('Received request:', req.method, req.url);
+    
+    let body;
+    try {
+      body = await req.json();
+      console.log('Request body:', body);
+    } catch (e) {
+      console.error('Error parsing request body:', e);
+      throw new Error('Invalid JSON in request body');
+    }
+
+    const { roomName, participantName } = body;
     
     if (!roomName || !participantName) {
       throw new Error('Room name and participant name are required');
@@ -28,38 +40,46 @@ serve(async (req) => {
     const apiSecret = Deno.env.get('LIVEKIT_API_SECRET');
 
     if (!apiKey || !apiSecret) {
+      console.error('Missing LiveKit credentials');
       throw new Error('LiveKit credentials not configured');
     }
 
-    // Create a new token
-    const at = new AccessToken(apiKey, apiSecret, {
-      identity: participantName,
-      name: participantName,
-    });
+    console.log('Creating AccessToken...');
+    
+    try {
+      // Create a new token
+      const at = new AccessToken(apiKey, apiSecret, {
+        identity: participantName,
+        name: participantName,
+      });
 
-    // Grant appropriate permissions
-    at.addGrant({
-      room: roomName,
-      roomJoin: true,
-      canPublish: true,
-      canSubscribe: true,
-    });
+      // Grant appropriate permissions
+      at.addGrant({
+        room: roomName,
+        roomJoin: true,
+        canPublish: true,
+        canSubscribe: true,
+      });
 
-    // Generate the JWT token
-    const token = at.toJwt();
-    console.log('Token generated successfully');
+      // Generate the JWT token
+      const token = at.toJwt();
+      console.log('Token generated successfully');
 
-    return new Response(
-      JSON.stringify({
-        token: token
-      }),
-      {
-        headers: corsHeaders,
-        status: 200,
-      },
-    )
+      return new Response(
+        JSON.stringify({
+          token: token
+        }),
+        {
+          headers: corsHeaders,
+          status: 200,
+        },
+      )
+    } catch (e) {
+      console.error('Error generating token:', e);
+      throw new Error(`Failed to generate token: ${e.message}`);
+    }
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Function error:', error);
     return new Response(
       JSON.stringify({ 
         error: error.message,
