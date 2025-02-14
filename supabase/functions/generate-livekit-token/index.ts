@@ -1,6 +1,8 @@
 
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { AccessToken } from 'https://esm.sh/v135/livekit-server-sdk@1.2.7';
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+
+// Importamos AccessToken desde una URL más simple y estable
+import { AccessToken } from "https://esm.sh/livekit-server-sdk"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,18 +13,23 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Log the incoming request for debugging
-    console.log('Received request:', req.method, req.url);
+    console.log('Function started');
     
+    // Log environment variables (without values)
+    const envVars = Object.keys(Deno.env.toObject());
+    console.log('Available environment variables:', envVars);
+
+    // Validate request body
     let body;
     try {
       body = await req.json();
-      console.log('Request body:', body);
+      console.log('Request body received:', JSON.stringify(body));
     } catch (e) {
       console.error('Error parsing request body:', e);
       throw new Error('Invalid JSON in request body');
@@ -34,61 +41,58 @@ serve(async (req) => {
       throw new Error('Room name and participant name are required');
     }
 
-    console.log(`Generating token for room: ${roomName}, participant: ${participantName}`);
+    console.log(`Processing request for room: ${roomName}, participant: ${participantName}`);
 
+    // Get LiveKit credentials
     const apiKey = Deno.env.get('LIVEKIT_API_KEY');
     const apiSecret = Deno.env.get('LIVEKIT_API_SECRET');
 
     if (!apiKey || !apiSecret) {
-      console.error('Missing LiveKit credentials');
+      console.error('LiveKit credentials not found');
       throw new Error('LiveKit credentials not configured');
     }
 
-    console.log('Creating AccessToken...');
-    
+    console.log('LiveKit credentials found');
+
     try {
-      // Create a new token
+      // Create access token
       const at = new AccessToken(apiKey, apiSecret, {
-        identity: participantName,
-        name: participantName,
+        identity: participantName
       });
 
-      // Grant appropriate permissions
-      at.addGrant({
+      at.addGrant({ 
         room: roomName,
         roomJoin: true,
         canPublish: true,
-        canSubscribe: true,
+        canSubscribe: true
       });
 
-      // Generate the JWT token
       const token = at.toJwt();
       console.log('Token generated successfully');
 
       return new Response(
-        JSON.stringify({
-          token: token
-        }),
-        {
+        JSON.stringify({ token }),
+        { 
           headers: corsHeaders,
-          status: 200,
-        },
-      )
+          status: 200 
+        }
+      );
     } catch (e) {
       console.error('Error generating token:', e);
-      throw new Error(`Failed to generate token: ${e.message}`);
+      throw new Error(`Token generation failed: ${e.message}`);
     }
   } catch (error) {
     console.error('Function error:', error);
+    
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: error.message,
         details: error.toString()
       }),
       {
         headers: corsHeaders,
-        status: 500,
-      },
-    )
+        status: 500
+      }
+    );
   }
 });
