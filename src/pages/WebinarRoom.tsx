@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -15,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import { AccessToken } from 'livekit-server-sdk';
 
 const fetchWebinar = async (id: string): Promise<Webinar | null> => {
   console.log('Fetching webinar with ID:', id);
@@ -93,49 +93,23 @@ const WebinarRoom = () => {
         throw new Error('Nombre de sala no encontrado');
       }
 
-      console.log('Haciendo petición al servidor con:', {
-        roomName: webinar.roomName,
-        participantName
+      const at = new AccessToken(apiKey, apiSecret, {
+        identity: participantName,
+        name: participantName,
+        ttl: 86400, // 24 horas
       });
 
-      // Modificamos la URL para incluir el schema HTTPS
-      const response = await fetch('https://juliawebinars-brslrae2.livekit.cloud/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          apiKey,
-          apiSecret,
-          roomName: webinar.roomName,
-          participantName,
-          // Agregamos opciones adicionales para el token
-          metadata: JSON.stringify({
-            name: participantName,
-          }),
-          ttl: 86400, // Token válido por 24 horas
-          canPublish: true,
-          canSubscribe: true,
-        }),
+      at.addGrant({
+        room: webinar.roomName,
+        roomJoin: true,
+        canPublish: true,
+        canSubscribe: true,
       });
 
-      if (!response.ok) {
-        const errorData = await response.text();
-        console.error('Error en la respuesta del servidor:', errorData);
-        throw new Error(`Error al generar el token: ${errorData}`);
-      }
+      const token = at.toJwt();
+      console.log('Token JWT generado:', token);
+      return token;
 
-      const responseText = await response.text();
-      console.log('Respuesta del servidor:', responseText);
-
-      // Si la respuesta es un token JWT válido, debería empezar con "ey"
-      if (!responseText.startsWith('ey')) {
-        console.error('Respuesta no válida del servidor:', responseText);
-        throw new Error('El servidor no devolvió un token JWT válido');
-      }
-
-      console.log('Token JWT válido generado');
-      return responseText;
     } catch (err) {
       console.error('Error al generar el token:', err);
       throw err;
