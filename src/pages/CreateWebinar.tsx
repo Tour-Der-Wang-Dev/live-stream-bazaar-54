@@ -7,19 +7,61 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { Video } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/components/ui/use-toast";
+import { v4 as uuidv4 } from 'uuid';
 
 const CreateWebinar = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
-    // Aquí iría la lógica para crear el webinar
-    setTimeout(() => {
-      setLoading(false);
+
+    const formData = new FormData(e.currentTarget);
+    const title = formData.get('title') as string;
+    const description = formData.get('description') as string;
+    const startTime = formData.get('startTime') as string;
+    const roomName = uuidv4(); // Generamos un ID único para la sala
+
+    try {
+      // Obtenemos el usuario actual
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        throw new Error('No user logged in');
+      }
+
+      const { error } = await supabase
+        .from('webinars')
+        .insert({
+          title,
+          description,
+          start_time: startTime,
+          host_name: user.email, // Usamos el email del usuario como host_name
+          room_name: roomName
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "Webinar creado con éxito",
+        description: "Tu webinar ha sido programado correctamente.",
+      });
+
       navigate("/");
-    }, 1000);
+    } catch (error) {
+      console.error('Error creating webinar:', error);
+      toast({
+        variant: "destructive",
+        title: "Error al crear el webinar",
+        description: "Por favor intenta nuevamente.",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -38,6 +80,7 @@ const CreateWebinar = () => {
                   Título del Webinar
                 </label>
                 <Input
+                  name="title"
                   required
                   placeholder="Ej: Introducción a React"
                   className="w-full"
@@ -49,6 +92,7 @@ const CreateWebinar = () => {
                   Descripción
                 </label>
                 <Textarea
+                  name="description"
                   required
                   placeholder="Describe tu webinar..."
                   className="w-full"
@@ -60,6 +104,7 @@ const CreateWebinar = () => {
                   Fecha y Hora
                 </label>
                 <Input
+                  name="startTime"
                   type="datetime-local"
                   required
                   className="w-full"
