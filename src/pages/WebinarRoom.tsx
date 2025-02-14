@@ -12,7 +12,7 @@ import { motion } from "framer-motion";
 import { Webinar } from "@/types/webinar";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 
 // En una versión real, esto vendría de una API
@@ -45,31 +45,9 @@ const WebinarRoom = () => {
   const webinar = mockWebinars.find(w => w.id === id);
   const [isJoining, setIsJoining] = useState(false);
 
-  // Verificar que las variables de entorno estén disponibles
-  useEffect(() => {
-    if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
-      toast({
-        variant: "destructive",
-        title: "Error de configuración",
-        description: "La configuración de Supabase no está completa. Por favor, conecta tu proyecto a Supabase."
-      });
-    }
-  }, []);
-
-  // Inicializar Supabase solo si las variables de entorno están disponibles
-  const supabase = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY
-    ? createClient(
-        import.meta.env.VITE_SUPABASE_URL,
-        import.meta.env.VITE_SUPABASE_ANON_KEY
-      )
-    : null;
-
   const generateToken = async (participantName: string) => {
     try {
-      if (!supabase) {
-        throw new Error('Supabase no está configurado correctamente');
-      }
-
+      // Obtener las credenciales de LiveKit desde Supabase
       const { data: secrets, error: secretsError } = await supabase
         .from('secrets')
         .select('name, value')
@@ -80,16 +58,17 @@ const WebinarRoom = () => {
       }
 
       if (!secrets || secrets.length < 2) {
-        throw new Error('LiveKit configuration not found');
+        throw new Error('No se encontró la configuración de LiveKit');
       }
 
       const apiKey = secrets.find(s => s.name === 'LIVEKIT_API_KEY')?.value;
       const apiSecret = secrets.find(s => s.name === 'LIVEKIT_API_SECRET')?.value;
 
       if (!apiKey || !apiSecret) {
-        throw new Error('LiveKit credentials not found');
+        throw new Error('No se encontraron las credenciales de LiveKit');
       }
 
+      // Generar el token usando las credenciales
       const response = await fetch('https://my-livekit-app.livekit.cloud/token', {
         method: 'POST',
         headers: {
@@ -104,13 +83,13 @@ const WebinarRoom = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate token');
+        throw new Error('Error al generar el token');
       }
 
       const { token } = await response.json();
       return token;
     } catch (err) {
-      console.error('Error generating token:', err);
+      console.error('Error al generar el token:', err);
       throw err;
     }
   };
@@ -122,12 +101,12 @@ const WebinarRoom = () => {
       setToken(newToken);
       setUserName(values.username);
     } catch (err) {
-      console.error('Error joining webinar:', err);
+      console.error('Error al unirse al webinar:', err);
       setError('Error al unirse al webinar. Por favor, intente nuevamente.');
       toast({
         variant: "destructive",
         title: "Error",
-        description: "No se pudo unir al webinar. Por favor, verifica la configuración de Supabase y LiveKit."
+        description: "No se pudo unir al webinar. Por favor, verifique la configuración."
       });
     } finally {
       setIsJoining(false);
@@ -168,12 +147,12 @@ const WebinarRoom = () => {
           >
             <Card className="max-w-2xl mx-auto p-8">
               <h1 className="text-3xl font-bold mb-4">{webinar.title}</h1>
-              <p className="text-gray-600 mb-6">{webinar.description}</p>
+              <p className="text-gray-600 dark:text-gray-300 mb-6">{webinar.description}</p>
               <div className="mb-6">
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   Anfitrión: {webinar.hostName}
                 </p>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   Fecha: {webinar.startTime.toLocaleDateString()}
                 </p>
               </div>
