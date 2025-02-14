@@ -33,6 +33,36 @@ export type Database = {
         }
         Relationships: []
       }
+      webinars: {
+        Row: {
+          created_at: string | null
+          description: string
+          host_name: string
+          id: string
+          room_name: string
+          start_time: string
+          title: string
+        }
+        Insert: {
+          created_at?: string | null
+          description: string
+          host_name: string
+          id?: string
+          room_name: string
+          start_time: string
+          title: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string
+          host_name?: string
+          id?: string
+          room_name?: string
+          start_time?: string
+          title?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

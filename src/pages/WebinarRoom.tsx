@@ -14,26 +14,31 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
+import { useQuery } from "@tanstack/react-query";
 
-// En una versión real, esto vendría de una API
-const mockWebinars: Webinar[] = [
-  {
-    id: "1",
-    title: "Introducción a React",
-    description: "Aprende los fundamentos de React desde cero",
-    startTime: new Date(Date.now() + 86400000),
-    hostName: "Ana García",
-    roomName: "react-intro"
-  },
-  {
-    id: "2",
-    title: "TypeScript Avanzado",
-    description: "Mejora tus habilidades en TypeScript",
-    startTime: new Date(Date.now() + 172800000),
-    hostName: "Carlos Pérez",
-    roomName: "ts-advanced"
+const fetchWebinar = async (id: string): Promise<Webinar | null> => {
+  const { data, error } = await supabase
+    .from('webinars')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error) {
+    console.error('Error al obtener webinar:', error);
+    throw error;
   }
-];
+
+  if (!data) return null;
+
+  return {
+    id: data.id,
+    title: data.title,
+    description: data.description,
+    startTime: new Date(data.start_time),
+    hostName: data.host_name,
+    roomName: data.room_name
+  };
+};
 
 const WebinarRoom = () => {
   const { id } = useParams();
@@ -42,9 +47,14 @@ const WebinarRoom = () => {
   const [token, setToken] = useState("");
   const [userName, setUserName] = useState("");
   const [error, setError] = useState("");
-  const webinar = mockWebinars.find(w => w.id === id);
   const [isJoining, setIsJoining] = useState(false);
-  const [liveKitUrl, setLiveKitUrl] = useState("wss://juliawebinars-brslrae2.livekit.cloud");
+  const [liveKitUrl] = useState("wss://juliawebinars-brslrae2.livekit.cloud");
+
+  const { data: webinar, isLoading } = useQuery({
+    queryKey: ['webinar', id],
+    queryFn: () => fetchWebinar(id || ''),
+    enabled: !!id
+  });
 
   const generateToken = async (participantName: string) => {
     try {
@@ -125,6 +135,16 @@ const WebinarRoom = () => {
       setIsJoining(false);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
+        <Card className="p-6">
+          <h2 className="text-xl font-semibold mb-4">Cargando...</h2>
+        </Card>
+      </div>
+    );
+  }
 
   if (!webinar) {
     return (

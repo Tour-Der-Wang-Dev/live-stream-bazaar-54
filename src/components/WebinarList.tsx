@@ -5,33 +5,56 @@ import { Calendar, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Webinar } from "@/types/webinar";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 
-// Datos de ejemplo - En una versión real esto vendría de una API
-const mockWebinars: Webinar[] = [
-  {
-    id: "1",
-    title: "Introducción a React",
-    description: "Aprende los fundamentos de React desde cero",
-    startTime: new Date(Date.now() + 86400000),
-    hostName: "Ana García",
-    roomName: "react-intro"
-  },
-  {
-    id: "2",
-    title: "TypeScript Avanzado",
-    description: "Mejora tus habilidades en TypeScript",
-    startTime: new Date(Date.now() + 172800000),
-    hostName: "Carlos Pérez",
-    roomName: "ts-advanced"
+const fetchWebinars = async (): Promise<Webinar[]> => {
+  const { data, error } = await supabase
+    .from('webinars')
+    .select('*')
+    .order('start_time', { ascending: true });
+
+  if (error) {
+    console.error('Error al obtener webinars:', error);
+    throw error;
   }
-];
+
+  return (data || []).map(webinar => ({
+    id: webinar.id,
+    title: webinar.title,
+    description: webinar.description,
+    startTime: new Date(webinar.start_time),
+    hostName: webinar.host_name,
+    roomName: webinar.room_name
+  }));
+};
 
 const WebinarList = () => {
   const navigate = useNavigate();
+  const { data: webinars, isLoading } = useQuery({
+    queryKey: ['webinars'],
+    queryFn: fetchWebinars
+  });
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-8">
+        <p>Cargando webinars...</p>
+      </div>
+    );
+  }
+
+  if (!webinars?.length) {
+    return (
+      <div className="text-center py-8">
+        <p>No hay webinars programados.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {mockWebinars.map((webinar, index) => (
+      {webinars.map((webinar, index) => (
         <motion.div
           key={webinar.id}
           initial={{ opacity: 0, y: 20 }}
