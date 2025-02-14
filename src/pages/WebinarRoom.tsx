@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { useQuery } from "@tanstack/react-query";
-import { AccessToken } from 'livekit-server-sdk';
 
 const fetchWebinar = async (id: string): Promise<Webinar | null> => {
   console.log('Fetching webinar with ID:', id);
@@ -66,49 +65,30 @@ const WebinarRoom = () => {
   const generateToken = async (participantName: string) => {
     try {
       console.log('Generando token para:', participantName);
-      const { data: secrets, error: secretsError } = await supabase
-        .from('secrets')
-        .select('name, value')
-        .in('name', ['LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET']);
-
-      if (secretsError) {
-        console.error('Error al obtener secretos:', secretsError);
-        throw new Error('Error al obtener las credenciales de LiveKit');
-      }
-
-      if (!secrets || secrets.length < 2) {
-        console.error('Secretos no encontrados:', secrets);
-        throw new Error('No se encontró la configuración de LiveKit');
-      }
-
-      const apiKey = secrets.find(s => s.name === 'LIVEKIT_API_KEY')?.value;
-      const apiSecret = secrets.find(s => s.name === 'LIVEKIT_API_SECRET')?.value;
-
-      if (!apiKey || !apiSecret) {
-        console.error('Credenciales no encontradas:', { apiKey, apiSecret });
-        throw new Error('No se encontraron las credenciales de LiveKit');
-      }
-
+      
       if (!webinar?.roomName) {
         throw new Error('Nombre de sala no encontrado');
       }
 
-      const at = new AccessToken(apiKey, apiSecret, {
-        identity: participantName,
-        name: participantName,
-        ttl: 86400, // 24 horas
+      const { data: tokenData, error: tokenError } = await supabase.functions.invoke('generate-livekit-token', {
+        body: {
+          roomName: webinar.roomName,
+          participantName: participantName
+        }
       });
 
-      at.addGrant({
-        room: webinar.roomName,
-        roomJoin: true,
-        canPublish: true,
-        canSubscribe: true,
-      });
+      if (tokenError) {
+        console.error('Error al generar token:', tokenError);
+        throw new Error('Error al generar el token de acceso');
+      }
 
-      const token = at.toJwt();
-      console.log('Token JWT generado:', token);
-      return token;
+      if (!tokenData?.token) {
+        console.error('No se recibió token:', tokenData);
+        throw new Error('No se recibió un token válido');
+      }
+
+      console.log('Token JWT generado exitosamente');
+      return tokenData.token;
 
     } catch (err) {
       console.error('Error al generar el token:', err);
