@@ -1,6 +1,6 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { AccessToken } from "https://esm.sh/v135/livekit-server-sdk@1.2.8/dist/index.js"
+import { AccessToken } from "https://esm.sh/livekit-server-sdk@1.1.0"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,11 +17,16 @@ serve(async (req) => {
   }
 
   try {
-    console.log('Function started');
+    console.log('Function started - attempting with LiveKit SDK v1.1.0');
 
     // Verificar credenciales primero
     const apiKey = Deno.env.get('LIVEKIT_API_KEY');
     const apiSecret = Deno.env.get('LIVEKIT_API_SECRET');
+
+    console.log('Checking credentials:', {
+      hasApiKey: !!apiKey,
+      hasApiSecret: !!apiSecret
+    });
 
     if (!apiKey || !apiSecret) {
       throw new Error('LiveKit credentials not configured');
@@ -39,34 +44,49 @@ serve(async (req) => {
 
     // Crear token - versión simplificada
     console.log('Creating token for:', participantName, 'in room:', roomName);
-    const at = new AccessToken(apiKey, apiSecret);
-    at.identity = participantName;
-    at.name = participantName;
     
-    at.addGrant({ 
-      roomJoin: true,
-      room: roomName,
-      canPublish: true,
-      canSubscribe: true
-    });
+    try {
+      const at = new AccessToken(apiKey, apiSecret);
+      console.log('AccessToken instance created');
+      
+      at.identity = participantName;
+      at.name = participantName;
+      console.log('Identity and name set');
+      
+      at.addGrant({ 
+        roomJoin: true,
+        room: roomName,
+        canPublish: true,
+        canSubscribe: true
+      });
+      console.log('Grant added successfully');
 
-    const token = at.toJwt();
-    console.log('Token generated');
+      const token = at.toJwt();
+      console.log('JWT token generated successfully');
 
-    return new Response(
-      JSON.stringify({ token }),
-      { 
-        headers: corsHeaders,
-        status: 200 
-      }
-    );
+      return new Response(
+        JSON.stringify({ token }),
+        { 
+          headers: corsHeaders,
+          status: 200 
+        }
+      );
+    } catch (tokenError) {
+      console.error('Error during token generation:', tokenError);
+      throw new Error(`Token generation failed: ${tokenError.message}`);
+    }
 
   } catch (error) {
-    console.error('Function error:', error);
+    console.error('Function error:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
     
     return new Response(
       JSON.stringify({
-        error: error.message
+        error: error.message,
+        details: error.stack
       }),
       {
         headers: corsHeaders,
