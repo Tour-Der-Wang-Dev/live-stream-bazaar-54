@@ -71,25 +71,27 @@ const WebinarRoom = () => {
         throw new Error('Nombre de sala no encontrado');
       }
 
-      const { data: tokenData, error: tokenError } = await supabase.functions.invoke('generate-livekit-token', {
-        body: {
+      const response = await fetch('https://yghrfxxfvuqasvldjdzk.supabase.co/functions/v1/generate-livekit-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabase.auth.getSession()?.access_token}`,
+        },
+        body: JSON.stringify({
           roomName: webinar.roomName,
           participantName: participantName
-        }
+        })
       });
 
-      if (tokenError) {
-        console.error('Error al generar token:', tokenError);
-        throw new Error('Error al generar el token de acceso');
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Error response:', errorData);
+        throw new Error(errorData.error || 'Error al generar el token de acceso');
       }
 
-      if (!tokenData?.token) {
-        console.error('No se recibió token:', tokenData);
-        throw new Error('No se recibió un token válido');
-      }
-
+      const data = await response.json();
       console.log('Token JWT generado exitosamente');
-      return tokenData.token;
+      return data.token;
 
     } catch (err) {
       console.error('Error al generar el token:', err);
