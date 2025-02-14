@@ -1,6 +1,6 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { AccessToken } from "https://esm.sh/livekit-server-sdk@1.1.0"
+import { AccessToken } from "https://esm.sh/livekit-server-sdk@1.0.4"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,7 +17,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log('Function started - attempting with LiveKit SDK v1.1.0');
+    console.log('Function started - attempting with LiveKit SDK v1.0.4');
 
     // Verificar credenciales primero
     const apiKey = Deno.env.get('LIVEKIT_API_KEY');
