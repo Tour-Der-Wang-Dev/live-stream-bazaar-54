@@ -1,6 +1,6 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { AccessToken } from "https://cdn.skypack.dev/livekit-server-sdk@1.0.4?dts"
+import { AccessToken } from "npm:livekit-server-sdk@1.2.7"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,7 +17,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log('Function started - attempting with LiveKit SDK v1.0.4 via Skypack');
+    console.log('Function started - attempting with LiveKit SDK v1.2.7');
 
     // Verificar credenciales primero
     const apiKey = Deno.env.get('LIVEKIT_API_KEY');
@@ -46,13 +46,12 @@ serve(async (req) => {
     console.log('Creating token for:', participantName, 'in room:', roomName);
     
     try {
-      const at = new AccessToken(apiKey, apiSecret);
+      const at = new AccessToken(apiKey, apiSecret, {
+        identity: participantName,
+        name: participantName,
+      });
       console.log('AccessToken instance created');
-      
-      at.identity = participantName;
-      at.name = participantName;
-      console.log('Identity and name set');
-      
+
       at.addGrant({ 
         roomJoin: true,
         room: roomName,
