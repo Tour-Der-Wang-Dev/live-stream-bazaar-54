@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
@@ -71,21 +70,34 @@ const WebinarRoom = () => {
         throw new Error('Nombre de sala no encontrado');
       }
 
-      console.log('Enviando solicitud al endpoint de LiveKit');
-      const response = await supabase.functions.invoke('generate-livekit-token', {
-        body: {
-          roomName: webinar.roomName,
-          participantName: participantName
-        }
-      });
-
-      if (response.error) {
-        console.error('Error response:', response.error);
-        throw new Error(response.error.message || 'Error al generar el token de acceso');
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No hay sesión activa');
       }
 
+      console.log('Enviando solicitud al endpoint de LiveKit');
+      const response = await fetch('https://yghrfxxfvuqasvldjdzk.supabase.co/functions/v1/generate-livekit-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          roomName: webinar.roomName,
+          participantName: participantName
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Error response:', errorData);
+        throw new Error(errorData.error || 'Error al generar el token de acceso');
+      }
+
+      const data = await response.json();
       console.log('Token JWT generado exitosamente');
-      return response.data.token;
+      return data.token;
 
     } catch (err) {
       console.error('Error al generar el token:', err);
