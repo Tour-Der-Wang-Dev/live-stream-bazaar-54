@@ -44,7 +44,7 @@ const WebinarRoom = () => {
   const [error, setError] = useState("");
   const webinar = mockWebinars.find(w => w.id === id);
   const [isJoining, setIsJoining] = useState(false);
-  const [liveKitUrl, setLiveKitUrl] = useState("wss://my-livekit-app.livekit.cloud");
+  const [liveKitUrl, setLiveKitUrl] = useState("wss://juliawebinars-brslrae2.livekit.cloud");
 
   const generateToken = async (participantName: string) => {
     try {
@@ -77,7 +77,7 @@ const WebinarRoom = () => {
         participantName
       });
 
-      const response = await fetch('https://my-livekit-app.livekit.cloud/token', {
+      const response = await fetch('https://juliawebinars-brslrae2.livekit.cloud/token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
