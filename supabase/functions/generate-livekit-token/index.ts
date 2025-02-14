@@ -1,5 +1,11 @@
 
-import { serve } from "https://deno.fresh.dev/std@v9.6.2/http/server.ts";
+// Follow this setup guide to integrate the Deno language server with your editor:
+// https://deno.land/manual/getting_started/setup_your_environment
+// This enables autocomplete, go to definition, etc.
+
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+
+console.log("Hello from Functions!");
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -10,53 +16,36 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  // Handle CORS preflight requests
+  // This is needed if you're planning to invoke your function from a browser.
   if (req.method === 'OPTIONS') {
-    return new Response(null, { 
-      status: 204, 
-      headers: corsHeaders 
-    });
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Log request details for debugging
-    const url = new URL(req.url);
-    console.log('Request received from:', req.headers.get('origin'));
-    console.log('Request path:', url.pathname);
-    console.log('Request method:', req.method);
+    // Log the method and URL for debugging
+    console.log(`Method: ${req.method}`);
+    console.log(`URL: ${req.url}`);
+    console.log('Headers:', JSON.stringify(Object.fromEntries(req.headers.entries()), null, 2));
 
-    // Basic function verification
     return new Response(
-      JSON.stringify({ 
-        message: "Function is working",
-        // Include some debug info in response
-        debug: {
-          origin: req.headers.get('origin'),
-          path: url.pathname,
-          method: req.method
-        }
+      JSON.stringify({
+        message: "Success from generate-livekit-token function",
+        timestamp: new Date().toISOString(),
+        token: "test-token"
       }),
-      { 
+      {
         headers: corsHeaders,
-        status: 200
-      }
-    );
-
+        status: 200,
+      },
+    )
   } catch (error) {
-    console.error('Error in function:', error);
+    console.error(error);
     return new Response(
-      JSON.stringify({ 
-        error: error.message,
-        // Include debug info even in error response
-        debug: {
-          origin: req.headers.get('origin'),
-          method: req.method
-        }
-      }),
-      { 
+      JSON.stringify({ error: error.message }),
+      {
         headers: corsHeaders,
-        status: 500
-      }
-    );
+        status: 500,
+      },
+    )
   }
 });
