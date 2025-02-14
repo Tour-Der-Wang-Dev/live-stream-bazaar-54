@@ -17,7 +17,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { useQuery } from "@tanstack/react-query";
 
 const fetchWebinar = async (id: string): Promise<Webinar | null> => {
-  console.log('Fetching webinar with ID:', id); // Agregamos log para debug
+  console.log('Fetching webinar with ID:', id);
   
   if (!id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
     console.error('ID inválido:', id);
@@ -110,7 +110,7 @@ const WebinarRoom = () => {
       if (!response.ok) {
         const errorData = await response.text();
         console.error('Error en la respuesta del servidor:', errorData);
-        throw new Error('Error al generar el token');
+        throw new Error(`Error al generar el token: ${errorData}`);
       }
 
       const { token } = await response.json();
@@ -125,18 +125,24 @@ const WebinarRoom = () => {
   const handleJoinWebinar = async (values: LocalUserChoices) => {
     try {
       setIsJoining(true);
+      setError('');
       console.log('Iniciando proceso de unión al webinar para:', values.username);
+      
+      if (!webinar?.roomName) {
+        throw new Error('No se encontró el nombre de la sala del webinar');
+      }
+
       const newToken = await generateToken(values.username);
       console.log('Token obtenido, configurando estado');
       setToken(newToken);
       setUserName(values.username);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error al unirse al webinar:', err);
-      setError('Error al unirse al webinar. Por favor, intente nuevamente.');
+      setError(err.message || 'Error al unirse al webinar. Por favor, intente nuevamente.');
       toast({
         variant: "destructive",
         title: "Error",
-        description: "No se pudo unir al webinar. Por favor, verifique la configuración."
+        description: err.message || "No se pudo unir al webinar. Por favor, verifique la configuración."
       });
     } finally {
       setIsJoining(false);
