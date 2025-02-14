@@ -29,7 +29,20 @@ const Auth = () => {
           email,
           password,
         });
-        if (error) throw error;
+        
+        if (error) {
+          if (error.message.includes('Email not confirmed')) {
+            toast({
+              variant: "destructive",
+              title: "Email no verificado",
+              description: "Por favor, verifica tu email antes de iniciar sesión. Revisa tu bandeja de entrada.",
+            });
+          } else {
+            throw error;
+          }
+          return;
+        }
+        
         navigate("/");
       } else {
         const { error: signUpError, data } = await supabase.auth.signUp({
@@ -43,6 +56,7 @@ const Auth = () => {
             },
           },
         });
+
         if (signUpError) throw signUpError;
 
         // Update profile
@@ -59,7 +73,7 @@ const Auth = () => {
 
         toast({
           title: "¡Registro exitoso!",
-          description: "Ya puedes iniciar sesión con tu cuenta.",
+          description: "Por favor, verifica tu email. Te hemos enviado un enlace de confirmación.",
         });
         setIsLogin(true);
       }
