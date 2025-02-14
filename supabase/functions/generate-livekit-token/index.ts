@@ -1,6 +1,6 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { AccessToken } from "https://esm.sh/livekit-server-sdk@1.2.7"
+import { AccessToken } from "https://esm.sh/livekit-client@1.11.2"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,17 +11,18 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
     console.log('Function started');
-    
+
     let body;
     try {
       body = await req.json();
-      console.log('Request body:', JSON.stringify(body));
+      console.log('Request body:', body);
     } catch (e) {
       console.error('Error parsing request body:', e);
       throw new Error('Invalid JSON in request body');
@@ -35,31 +36,43 @@ serve(async (req) => {
 
     console.log(`Processing request for room: ${roomName}, participant: ${participantName}`);
 
+    // Check for LiveKit credentials
     const apiKey = Deno.env.get('LIVEKIT_API_KEY');
     const apiSecret = Deno.env.get('LIVEKIT_API_SECRET');
 
     if (!apiKey || !apiSecret) {
-      console.error('LiveKit credentials not found');
-      throw new Error('LiveKit credentials not configured');
+      console.error('LiveKit credentials missing');
+      return new Response(
+        JSON.stringify({ error: 'LiveKit credentials not configured' }),
+        { 
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+          },
+          status: 500 
+        }
+      );
     }
 
+    console.log('Creating token with LiveKit credentials');
+
     try {
-      const token = new AccessToken(apiKey, apiSecret, {
-        identity: participantName,
+      const at = new AccessToken(apiKey, apiSecret, {
+        identity: participantName
       });
 
-      token.addGrant({
+      at.addGrant({
         roomJoin: true,
         room: roomName,
         canPublish: true,
-        canSubscribe: true,
+        canSubscribe: true
       });
 
-      const jwt = token.toJwt();
+      const token = at.toJwt();
       console.log('Token generated successfully');
 
       return new Response(
-        JSON.stringify({ token: jwt }),
+        JSON.stringify({ token }),
         { 
           headers: {
             ...corsHeaders,
@@ -70,7 +83,19 @@ serve(async (req) => {
       );
     } catch (e) {
       console.error('Error generating token:', e);
-      throw new Error(`Token generation failed: ${e.message}`);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Token generation failed',
+          details: e.message 
+        }),
+        { 
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+          },
+          status: 500 
+        }
+      );
     }
   } catch (error) {
     console.error('Function error:', error);
