@@ -19,22 +19,17 @@ serve(async (req) => {
   try {
     console.log('Function started');
 
+    // Verificar credenciales primero
     const apiKey = Deno.env.get('LIVEKIT_API_KEY');
     const apiSecret = Deno.env.get('LIVEKIT_API_SECRET');
 
     if (!apiKey || !apiSecret) {
-      console.error('LiveKit credentials missing');
       throw new Error('LiveKit credentials not configured');
     }
 
-    let body;
-    try {
-      body = await req.json();
-      console.log('Request body:', JSON.stringify(body, null, 2));
-    } catch (e) {
-      console.error('Error parsing request body:', e);
-      throw new Error('Invalid JSON in request body');
-    }
+    // Parsear el body
+    const body = await req.json();
+    console.log('Request body:', JSON.stringify(body, null, 2));
 
     const { roomName, participantName } = body;
     
@@ -42,52 +37,39 @@ serve(async (req) => {
       throw new Error('Room name and participant name are required');
     }
 
-    console.log(`Processing request for room: ${roomName}, participant: ${participantName}`);
+    // Crear token - versión simplificada
+    console.log('Creating token for:', participantName, 'in room:', roomName);
+    const at = new AccessToken(apiKey, apiSecret);
+    at.identity = participantName;
+    at.name = participantName;
+    
+    at.addGrant({ 
+      roomJoin: true,
+      room: roomName,
+      canPublish: true,
+      canSubscribe: true
+    });
 
-    // Create a new token
-    try {
-      console.log('Creating AccessToken instance');
-      const at = new AccessToken(apiKey, apiSecret, participantName);
+    const token = at.toJwt();
+    console.log('Token generated');
 
-      console.log('Adding grant to token');
-      at.addGrant({ 
-        roomJoin: true,
-        room: roomName,
-        canPublish: true,
-        canSubscribe: true
-      });
+    return new Response(
+      JSON.stringify({ token }),
+      { 
+        headers: corsHeaders,
+        status: 200 
+      }
+    );
 
-      console.log('Generating JWT');
-      const token = at.toJwt();
-      console.log('Token generated successfully:', token.substring(0, 20) + '...');
-
-      return new Response(
-        JSON.stringify({ token }),
-        { 
-          headers: {
-            ...corsHeaders,
-            'Content-Type': 'application/json',
-          },
-          status: 200 
-        }
-      );
-    } catch (e) {
-      console.error('Error in token generation:', e);
-      throw new Error(`Token generation failed: ${e.message}`);
-    }
   } catch (error) {
     console.error('Function error:', error);
     
     return new Response(
       JSON.stringify({
-        error: error.message,
-        details: error.toString()
+        error: error.message
       }),
       {
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json',
-        },
+        headers: corsHeaders,
         status: 500
       }
     );
