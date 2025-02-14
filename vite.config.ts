@@ -16,14 +16,22 @@ export default defineConfig(({ mode }) => ({
     componentTagger(),
   ].filter(Boolean),
   define: {
-    'global': {},
+    'global': 'globalThis',
     'process.env': {},
     'process.env.NODE_ENV': JSON.stringify(mode),
     'process.platform': JSON.stringify('win32'),
     'process.version': JSON.stringify('v16.14.0'),
     'process.versions': JSON.stringify({
       node: '16.14.0'
-    })
+    }),
+    'process': {
+      env: {},
+      platform: 'win32',
+      version: 'v16.14.0',
+      versions: {
+        node: '16.14.0'
+      }
+    }
   },
   resolve: {
     alias: {
