@@ -9,7 +9,7 @@ import {
   PreJoin,
   LocalUserChoices,
   useLocalParticipant,
-  useRoom,
+  RoomAudioRenderer,
   useTracks,
 } from "@livekit/components-react";
 import {
@@ -72,16 +72,16 @@ const WebinarContent = ({
   const [answer, setAnswer] = useState("");
   const [isAskingQuestion, setIsAskingQuestion] = useState(false);
   const { toast } = useToast();
-  const room = useRoom();
   const { localParticipant } = useLocalParticipant();
+  const tracks = useTracks();
 
   useEffect(() => {
-    if (!room || !localParticipant) return;
-
-    console.log('Room and local participant ready');
+    if (!localParticipant) return;
+    
+    console.log('Local participant ready:', localParticipant.identity);
 
     const handleTranscript = async (text: string) => {
-      console.log('Received transcript:', text);
+      console.log('Processing transcript:', text);
       try {
         const { error } = await supabase.functions.invoke('webinar-agent', {
           body: {
@@ -103,23 +103,38 @@ const WebinarContent = ({
       }
     };
 
-    // Manejar mensajes de datos
-    const handleData = (msg: Uint8Array, participant?: RemoteParticipant, kind?: DataPacket_Kind) => {
-      if (kind === DataPacket_Kind.RELIABLE) {
-        const text = new TextDecoder().decode(msg);
-        console.log('Received data message:', text);
-        handleTranscript(text);
+    const handleMessage = (payload: Uint8Array) => {
+      try {
+        const text = new TextDecoder().decode(payload);
+        console.log('Received message:', text);
+        
+        // Intentar parsear como JSON primero
+        try {
+          const data = JSON.parse(text);
+          if (data.type === 'transcript') {
+            handleTranscript(data.content);
+          }
+        } catch {
+          // Si no es JSON, tratar como transcripción directa
+          handleTranscript(text);
+        }
+      } catch (error) {
+        console.error('Error processing message:', error);
       }
     };
 
     // Suscribirse a eventos de datos
-    room.on(RoomEvent.DataReceived, handleData);
+    localParticipant.on(RoomEvent.DataReceived, handleMessage);
 
-    // Publicar mensaje de prueba (solo para verificar que funciona)
+    // Enviar mensaje de prueba
     const sendTestMessage = async () => {
       try {
-        const message = new TextEncoder().encode('Test message from ' + localParticipant.identity);
-        await room.localParticipant.publishData(message, DataPacket_Kind.RELIABLE);
+        const message = {
+          type: 'transcript',
+          content: `Test transcript from ${localParticipant.identity}`
+        };
+        const encoded = new TextEncoder().encode(JSON.stringify(message));
+        await localParticipant.publishData(encoded, DataPacket_Kind.RELIABLE);
         console.log('Test message sent');
       } catch (e) {
         console.error('Error sending test message:', e);
@@ -128,22 +143,25 @@ const WebinarContent = ({
     sendTestMessage();
 
     return () => {
-      room.off(RoomEvent.DataReceived, handleData);
+      localParticipant.off(RoomEvent.DataReceived, handleMessage);
     };
-  }, [room, localParticipant, webinarId]);
+  }, [localParticipant, webinarId]);
 
   const handleAskQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!question.trim() || !room) return;
+    if (!question.trim() || !localParticipant) return;
 
     setIsAskingQuestion(true);
     try {
-      // Publicar la pregunta al room
-      const questionMsg = new TextEncoder().encode(JSON.stringify({
+      // Publicar la pregunta
+      const questionMsg = {
         type: 'question',
         content: question
-      }));
-      await room.localParticipant.publishData(questionMsg, DataPacket_Kind.RELIABLE);
+      };
+      await localParticipant.publishData(
+        new TextEncoder().encode(JSON.stringify(questionMsg)),
+        DataPacket_Kind.RELIABLE
+      );
 
       const { data, error } = await supabase.functions.invoke('webinar-agent', {
         body: {
@@ -158,12 +176,15 @@ const WebinarContent = ({
       setAnswer(data.answer);
       setQuestion("");
 
-      // Publicar la respuesta al room
-      const answerMsg = new TextEncoder().encode(JSON.stringify({
+      // Publicar la respuesta
+      const answerMsg = {
         type: 'answer',
         content: data.answer
-      }));
-      await room.localParticipant.publishData(answerMsg, DataPacket_Kind.RELIABLE);
+      };
+      await localParticipant.publishData(
+        new TextEncoder().encode(JSON.stringify(answerMsg)),
+        DataPacket_Kind.RELIABLE
+      );
 
     } catch (error) {
       console.error('Error asking question:', error);
@@ -179,6 +200,7 @@ const WebinarContent = ({
 
   return (
     <div className="h-screen flex flex-col bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+      <RoomAudioRenderer />
       <div className="flex-1 p-4">
         <div className="rounded-2xl overflow-hidden shadow-xl bg-white dark:bg-gray-800">
           <VideoConference />
