@@ -18,6 +18,7 @@ import {
   RemoteParticipant,
   LocalParticipant,
   TrackPublication,
+  DataPacket_Kind,
 } from 'livekit-client';
 import "@livekit/components-styles";
 import { motion } from "framer-motion";
@@ -27,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import { MessageCircle, Mic, Calendar, Clock } from "lucide-react";
 
 const fetchWebinar = async (id: string): Promise<Webinar | null> => {
   console.log('Fetching webinar with ID:', id);
@@ -100,33 +102,18 @@ const WebinarContent = ({
       }
     };
 
-    const handleData = (data: Uint8Array) => {
-      const text = new TextDecoder().decode(data);
-      console.log('Transcripción recibida:', text);
-      handleTranscript(text);
-    };
-
-    // Configurar transcripción para participante local
-    const handleAudioTrack = (track: TrackPublication) => {
-      if (track.kind === Track.Kind.Audio) {
-        console.log('Nueva pista de audio detectada');
-        track.on(RoomEvent.DataReceived, handleData);
+    const handleDataReceived = (payload: Uint8Array, kind: DataPacket_Kind) => {
+      if (kind === DataPacket_Kind.RELIABLE) {
+        const text = new TextDecoder().decode(payload);
+        console.log('Transcripción recibida:', text);
+        handleTranscript(text);
       }
     };
 
-    // Suscribirse a pistas existentes
-    localParticipant.tracks.forEach(handleAudioTrack);
-
-    // Suscribirse a nuevas pistas
-    localParticipant.on(RoomEvent.TrackPublished, handleAudioTrack);
+    localParticipant.on(RoomEvent.DataReceived, handleDataReceived);
 
     return () => {
-      localParticipant.tracks.forEach(track => {
-        if (track.kind === Track.Kind.Audio) {
-          track.off(RoomEvent.DataReceived, handleData);
-        }
-      });
-      localParticipant.off(RoomEvent.TrackPublished, handleAudioTrack);
+      localParticipant.off(RoomEvent.DataReceived, handleDataReceived);
     };
   }, [localParticipant, webinarId]);
 
@@ -160,27 +147,41 @@ const WebinarContent = ({
   };
 
   return (
-    <div className="h-screen flex flex-col">
-      <div className="flex-1">
-        <VideoConference />
+    <div className="h-screen flex flex-col bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
+      <div className="flex-1 p-4">
+        <div className="rounded-2xl overflow-hidden shadow-xl bg-white dark:bg-gray-800">
+          <VideoConference />
+        </div>
       </div>
       
-      <div className="h-1/3 bg-white dark:bg-gray-800 border-t">
-        <div className="container mx-auto p-4 h-full flex gap-4">
-          <div className="flex-1 flex flex-col">
-            <h3 className="text-lg font-semibold mb-2">Transcripción en vivo</h3>
-            <ScrollArea className="flex-1 p-4 border rounded-lg">
-              <p className="whitespace-pre-wrap">{transcript}</p>
+      <div className="h-2/5 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 shadow-lg">
+        <div className="container mx-auto p-6 h-full flex gap-6">
+          <div className="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 rounded-xl p-4 shadow-inner">
+            <div className="flex items-center gap-2 mb-3">
+              <Mic className="w-5 h-5 text-blue-500" />
+              <h3 className="text-lg font-semibold">Transcripción en vivo</h3>
+            </div>
+            <ScrollArea className="flex-1 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+              <p className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+                {transcript || "La transcripción aparecerá aquí cuando comience..."}
+              </p>
             </ScrollArea>
           </div>
 
-          <div className="w-96 flex flex-col">
-            <h3 className="text-lg font-semibold mb-2">Preguntas al agente</h3>
-            <ScrollArea className="flex-1 p-4 border rounded-lg mb-4">
-              {answer && (
-                <div className="mb-4 p-3 bg-gray-100 dark:bg-gray-700 rounded">
-                  <p className="text-sm">{answer}</p>
+          <div className="w-[400px] flex flex-col bg-gray-50 dark:bg-gray-900 rounded-xl p-4 shadow-inner">
+            <div className="flex items-center gap-2 mb-3">
+              <MessageCircle className="w-5 h-5 text-green-500" />
+              <h3 className="text-lg font-semibold">Asistente del Webinar</h3>
+            </div>
+            <ScrollArea className="flex-1 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 mb-4">
+              {answer ? (
+                <div className="p-4 bg-green-50 dark:bg-gray-700 rounded-lg border border-green-100 dark:border-gray-600">
+                  <p className="text-gray-700 dark:text-gray-300">{answer}</p>
                 </div>
+              ) : (
+                <p className="text-gray-500 dark:text-gray-400 text-center mt-4">
+                  Haz una pregunta sobre el contenido del webinar
+                </p>
               )}
             </ScrollArea>
 
@@ -190,11 +191,12 @@ const WebinarContent = ({
                 onChange={(e) => setQuestion(e.target.value)}
                 placeholder="Haz una pregunta sobre el webinar..."
                 disabled={isAskingQuestion}
+                className="bg-white dark:bg-gray-800"
               />
               <Button 
                 type="submit" 
                 disabled={isAskingQuestion}
-                className="bg-black hover:bg-gray-800 text-white"
+                className="bg-green-600 hover:bg-green-700 text-white"
               >
                 Preguntar
               </Button>
@@ -284,8 +286,11 @@ const WebinarRoom = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
-        <Card className="p-6">
-          <h2 className="text-xl font-semibold mb-4">Cargando...</h2>
+        <Card className="p-8 shadow-xl">
+          <div className="animate-pulse flex flex-col items-center">
+            <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
+            <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
+          </div>
         </Card>
       </div>
     );
@@ -294,9 +299,12 @@ const WebinarRoom = () => {
   if (!webinar) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
-        <Card className="p-6">
-          <h2 className="text-xl font-semibold mb-4">Webinar no encontrado</h2>
-          <Button onClick={() => navigate('/')} className="w-full">
+        <Card className="p-8 shadow-xl">
+          <h2 className="text-2xl font-semibold mb-6 text-center">Webinar no encontrado</h2>
+          <Button 
+            onClick={() => navigate('/')} 
+            className="w-full bg-black hover:bg-gray-800"
+          >
             Volver al inicio
           </Button>
         </Card>
@@ -324,28 +332,55 @@ const WebinarRoom = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            <Card className="max-w-2xl mx-auto p-8">
-              <h1 className="text-3xl font-bold mb-4">{webinar.title}</h1>
-              <p className="text-gray-600 dark:text-gray-300 mb-6">{webinar.description}</p>
-              <div className="mb-6">
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Anfitrión: {webinar.hostName}
-                </p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Fecha: {webinar.startTime.toLocaleDateString()}
-                </p>
+            <Card className="max-w-2xl mx-auto p-8 shadow-2xl">
+              <h1 className="text-3xl font-bold mb-6 text-center">{webinar.title}</h1>
+              <p className="text-gray-600 dark:text-gray-300 mb-8 text-center leading-relaxed">
+                {webinar.description}
+              </p>
+              
+              <div className="flex justify-center gap-8 mb-8">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-blue-500" />
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    {webinar.startTime.toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-green-500" />
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    {webinar.startTime.toLocaleTimeString()}
+                  </p>
+                </div>
               </div>
+
+              <div className="bg-gray-50 dark:bg-gray-800 p-6 rounded-lg mb-8">
+                <h3 className="text-lg font-semibold mb-2">Anfitrión</h3>
+                <p className="text-gray-700 dark:text-gray-300">{webinar.hostName}</p>
+              </div>
+
               <PreJoin
                 onError={(err) => setError(err.message)}
                 onSubmit={handleJoinWebinar}
               />
+              
               {error && (
-                <p className="text-red-500 mt-4 text-center">{error}</p>
+                <motion.p 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-red-500 mt-4 text-center bg-red-50 dark:bg-red-900/20 p-3 rounded"
+                >
+                  {error}
+                </motion.p>
               )}
+              
               {isJoining && (
-                <p className="text-blue-500 mt-4 text-center">
+                <motion.p 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="text-blue-500 mt-4 text-center bg-blue-50 dark:bg-blue-900/20 p-3 rounded"
+                >
                   Conectando al webinar...
-                </p>
+                </motion.p>
               )}
             </Card>
           </motion.div>
