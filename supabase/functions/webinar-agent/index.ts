@@ -15,6 +15,7 @@ serve(async (req) => {
 
   try {
     const { action, webinarId, text, question } = await req.json()
+    console.log('Received request:', { action, webinarId, text, question });
 
     // Configurar cliente de Supabase
     const supabaseClient = createClient(
@@ -28,14 +29,41 @@ serve(async (req) => {
     )
 
     if (action === 'save_transcript') {
-      const { error } = await supabaseClient
+      console.log('Saving transcript for webinar:', webinarId);
+      
+      // Primero intentamos obtener la transcripción existente
+      const { data: existingTranscription, error: fetchError } = await supabaseClient
         .from('webinar_transcriptions')
-        .insert({
-          webinar_id: webinarId,
-          transcript: text
-        })
+        .select('*')
+        .eq('webinar_id', webinarId)
+        .maybeSingle();
 
-      if (error) throw error
+      if (fetchError) {
+        console.error('Error fetching existing transcription:', fetchError);
+        throw fetchError;
+      }
+
+      if (existingTranscription) {
+        // Actualizar transcripción existente
+        const { error: updateError } = await supabaseClient
+          .from('webinar_transcriptions')
+          .update({
+            transcript: existingTranscription.transcript + " " + text
+          })
+          .eq('webinar_id', webinarId);
+
+        if (updateError) throw updateError;
+      } else {
+        // Crear nueva transcripción
+        const { error: insertError } = await supabaseClient
+          .from('webinar_transcriptions')
+          .insert({
+            webinar_id: webinarId,
+            transcript: text
+          });
+
+        if (insertError) throw insertError;
+      }
 
       return new Response(
         JSON.stringify({ success: true }),
@@ -44,15 +72,27 @@ serve(async (req) => {
     }
 
     if (action === 'ask_question') {
+      console.log('Processing question for webinar:', webinarId);
+      
       // Obtener la transcripción del webinar
       const { data: transcription, error: transcriptionError } = await supabaseClient
         .from('webinar_transcriptions')
         .select('transcript')
         .eq('webinar_id', webinarId)
-        .single()
+        .maybeSingle();
 
-      if (transcriptionError) throw transcriptionError
+      if (transcriptionError) {
+        console.error('Error fetching transcription:', transcriptionError);
+        throw transcriptionError;
+      }
 
+      if (!transcription) {
+        console.log('No transcription found for webinar:', webinarId);
+        throw new Error('No hay transcripción disponible para este webinar');
+      }
+
+      console.log('Sending request to OpenAI');
+      
       // Usar OpenAI para generar una respuesta basada en la transcripción
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -61,7 +101,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'gpt-4',
           messages: [
             {
               role: 'system',
@@ -75,10 +115,16 @@ serve(async (req) => {
             }
           ],
         }),
-      })
+      });
 
-      const data = await response.json()
-      const answer = data.choices[0].message.content
+      const data = await response.json();
+      console.log('OpenAI response received');
+      
+      if (!data.choices?.[0]?.message?.content) {
+        throw new Error('No se pudo generar una respuesta');
+      }
+
+      const answer = data.choices[0].message.content;
 
       return new Response(
         JSON.stringify({ answer }),
@@ -88,6 +134,7 @@ serve(async (req) => {
 
     throw new Error('Invalid action')
   } catch (error) {
+    console.error('Error in edge function:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
       { 
