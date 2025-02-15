@@ -17,8 +17,8 @@ import {
   Room,
   DataPacket_Kind,
   RemoteParticipant,
+  LocalParticipant,
   LocalTrackPublication,
-  LocalAudioTrack,
 } from 'livekit-client';
 import "@livekit/components-styles";
 import { motion } from "framer-motion";
@@ -74,10 +74,12 @@ const WebinarContent = ({
   const [isAskingQuestion, setIsAskingQuestion] = useState(false);
   const { toast } = useToast();
   const { localParticipant } = useLocalParticipant();
-  const audioTracks = useTracks([Track.Source.Microphone]);
 
   useEffect(() => {
-    if (!localParticipant) return;
+    if (!localParticipant) {
+      console.log('No local participant yet');
+      return;
+    }
     
     console.log('Local participant ready:', localParticipant.identity);
 
@@ -106,20 +108,29 @@ const WebinarContent = ({
 
     const setupTranscriptionAgent = async () => {
       try {
-        if (audioTracks.length === 0) {
-          console.warn('No audio tracks found, waiting...');
-          return;
-        }
-
-        const audioTrack = audioTracks[0].track;
+        console.log('Setting up transcription agent...');
         
-        if (!audioTrack) {
-          console.warn('Audio track not ready');
+        // Obtener la publicación del track de audio local
+        const audioPublication = localParticipant.getTrackPublications().find(
+          pub => pub.kind === Track.Kind.Audio
+        ) as LocalTrackPublication;
+
+        if (!audioPublication) {
+          console.warn('No audio publication found');
           return;
         }
 
-        console.log('Found audio track, setting up transcription');
+        console.log('Found audio publication:', audioPublication);
 
+        const audioTrack = audioPublication.track;
+        if (!audioTrack) {
+          console.warn('No audio track in publication');
+          return;
+        }
+
+        console.log('Found audio track, attempting to create agent');
+
+        // @ts-ignore
         const agent = await audioTrack.createAgent({
           type: 'transcription',
           configuration: {
@@ -127,7 +138,7 @@ const WebinarContent = ({
           },
         });
 
-        console.log('Transcription agent created successfully');
+        console.log('Transcription agent created successfully:', agent);
 
         agent.on('data', (msg: any) => {
           console.log('Transcription data received:', msg);
@@ -156,12 +167,17 @@ const WebinarContent = ({
       }
     };
 
-    setupTranscriptionAgent();
-
+    // Intentar configurar el agente cada segundo hasta que funcione
     const interval = setInterval(() => {
-      if (audioTracks.length > 0 && audioTracks[0].track) {
+      const hasAudioTrack = localParticipant.getTrackPublications().some(
+        pub => pub.kind === Track.Kind.Audio
+      );
+
+      if (hasAudioTrack) {
         setupTranscriptionAgent();
         clearInterval(interval);
+      } else {
+        console.log('Waiting for audio track...');
       }
     }, 1000);
 
@@ -169,7 +185,7 @@ const WebinarContent = ({
       clearInterval(interval);
       console.log('Cleaning up transcription agent');
     };
-  }, [localParticipant, audioTracks, webinarId]);
+  }, [localParticipant, webinarId]);
 
   const handleAskQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
