@@ -20,6 +20,8 @@ import {
   LocalParticipant,
   LocalTrackPublication,
   LocalAudioTrack,
+  VoiceAgentOptions,
+  Agent,
 } from 'livekit-client';
 import "@livekit/components-styles";
 import { motion } from "framer-motion";
@@ -75,6 +77,7 @@ const WebinarContent = ({
   const [isAskingQuestion, setIsAskingQuestion] = useState(false);
   const { toast } = useToast();
   const { localParticipant } = useLocalParticipant();
+  const [agent, setAgent] = useState<Agent | null>(null);
 
   useEffect(() => {
     if (!localParticipant) {
@@ -149,26 +152,51 @@ const WebinarContent = ({
           enabled: audioTrack.mediaStreamTrack.enabled
         });
 
-        if (!audioTrack.mediaStreamTrack.enabled) {
-          console.log('[Transcription] Enabling audio track');
-          audioTrack.mediaStreamTrack.enabled = true;
-        }
+        // Configuración del agente de voz
+        const voiceAgentOptions: VoiceAgentOptions = {
+          type: 'voice',
+          configuration: {
+            llm: {
+              provider: 'openai',
+              temperature: 0.7,
+              systemPrompt: "Eres un asistente que escucha y transcribe con precisión el audio en español.",
+            },
+            language: 'es',
+            sampleRate: 16000,
+            onTranscript: (result) => {
+              console.log('[Transcription] Transcript received:', result);
+              if (result.text) {
+                handleTranscript(result.text);
+              }
+            }
+          }
+        };
 
-        console.log('[Transcription] Initializing transcription');
+        // Crear el agente de voz
+        console.log('[Transcription] Creating voice agent...');
+        const newAgent = await audioTrack.createAgent(voiceAgentOptions);
+        setAgent(newAgent);
 
-        // Los agentes de transcripción deben ser manejados a través de la API de LiveKit Cloud
-        // por ahora solo logueamos el estado del audio
-        console.log('[Transcription] Audio track is ready for transcription:', {
-          sampleRate: audioTrack.mediaStreamTrack.getSettings().sampleRate,
-          channelCount: audioTrack.mediaStreamTrack.getSettings().channelCount,
-          autoGainControl: audioTrack.mediaStreamTrack.getSettings().autoGainControl
+        // Configurar eventos del agente
+        newAgent.on('start', () => {
+          console.log('[Transcription] Agent started');
+          toast({
+            title: "Transcripción iniciada",
+            description: "El audio está siendo procesado"
+          });
         });
 
-        // Aquí iría la integración con el servicio de transcripción real
-        // Por ahora solo mostramos que el audio está activo
-        toast({
-          title: "Transcripción iniciada",
-          description: "El audio está siendo procesado"
+        newAgent.on('stop', () => {
+          console.log('[Transcription] Agent stopped');
+        });
+
+        newAgent.on('error', (error) => {
+          console.error('[Transcription] Agent error:', error);
+          toast({
+            variant: "destructive",
+            title: "Error en la transcripción",
+            description: error.message
+          });
         });
 
         console.log('[Transcription] Setup completed');
@@ -200,6 +228,10 @@ const WebinarContent = ({
     }, 1000);
 
     return () => {
+      if (agent) {
+        console.log('[Transcription] Stopping agent...');
+        agent.stop();
+      }
       clearInterval(interval);
       console.log('[Transcription] Cleanup completed');
     };
