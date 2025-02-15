@@ -36,8 +36,8 @@ function App() {
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <Router>
+    <Router>
+      <QueryClientProvider client={queryClient}>
         <Routes>
           <Route path="/auth" element={!isAuthenticated ? <Auth /> : <Navigate to="/" />} />
           <Route path="/" element={isAuthenticated ? <Index /> : <Navigate to="/auth" />} />
@@ -46,8 +46,8 @@ function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
         <Toaster />
-      </Router>
-    </QueryClientProvider>
+      </QueryClientProvider>
+    </Router>
   );
 }
 
