@@ -110,19 +110,20 @@ const WebinarContent = ({
       try {
         console.log('Setting up transcription agent...');
         
-        // Obtener la publicación del track de audio local
-        const audioPublication = localParticipant.getTrackPublications().find(
+        // Acceder a los tracks locales a través de la propiedad tracks
+        const audioTrackPubs = localParticipant.tracks.values();
+        const audioTrackPub = Array.from(audioTrackPubs).find(
           pub => pub.kind === Track.Kind.Audio
-        ) as LocalTrackPublication;
+        );
 
-        if (!audioPublication) {
+        if (!audioTrackPub) {
           console.warn('No audio publication found');
           return;
         }
 
-        console.log('Found audio publication:', audioPublication);
+        console.log('Found audio publication:', audioTrackPub);
 
-        const audioTrack = audioPublication.track;
+        const audioTrack = audioTrackPub.track;
         if (!audioTrack) {
           console.warn('No audio track in publication');
           return;
@@ -169,7 +170,7 @@ const WebinarContent = ({
 
     // Intentar configurar el agente cada segundo hasta que funcione
     const interval = setInterval(() => {
-      const hasAudioTrack = localParticipant.getTrackPublications().some(
+      const hasAudioTrack = Array.from(localParticipant.tracks.values()).some(
         pub => pub.kind === Track.Kind.Audio
       );
 
