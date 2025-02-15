@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -73,7 +72,6 @@ const WebinarContent = ({
   const [isAskingQuestion, setIsAskingQuestion] = useState(false);
   const { toast } = useToast();
   const { localParticipant } = useLocalParticipant();
-  const tracks = useTracks();
 
   useEffect(() => {
     if (!localParticipant) return;
@@ -103,47 +101,42 @@ const WebinarContent = ({
       }
     };
 
-    const handleMessage = (payload: Uint8Array) => {
+    const handleData = (msg: Uint8Array) => {
       try {
-        const text = new TextDecoder().decode(payload);
-        console.log('Received message:', text);
+        const text = new TextDecoder().decode(msg);
+        console.log('Received data:', text);
         
-        // Intentar parsear como JSON primero
         try {
           const data = JSON.parse(text);
           if (data.type === 'transcript') {
             handleTranscript(data.content);
           }
         } catch {
-          // Si no es JSON, tratar como transcripción directa
+          // Si no es JSON, asumimos que es transcripción directa
           handleTranscript(text);
         }
       } catch (error) {
-        console.error('Error processing message:', error);
+        console.error('Error processing data:', error);
       }
     };
 
     // Suscribirse a eventos de datos
-    localParticipant.on(RoomEvent.DataReceived, handleMessage);
+    localParticipant.on(RoomEvent.DataReceived, handleData);
 
-    // Enviar mensaje de prueba
-    const sendTestMessage = async () => {
-      try {
-        const message = {
-          type: 'transcript',
-          content: `Test transcript from ${localParticipant.identity}`
-        };
-        const encoded = new TextEncoder().encode(JSON.stringify(message));
-        await localParticipant.publishData(encoded, DataPacket_Kind.RELIABLE);
-        console.log('Test message sent');
-      } catch (e) {
-        console.error('Error sending test message:', e);
+    // Configurar agente de transcripción
+    const setupTranscriptionAgent = () => {
+      const tracks = localParticipant.getTracks();
+      const audioTrack = tracks.find(track => track.kind === Track.Kind.Audio);
+      
+      if (audioTrack) {
+        console.log('Setting up transcription for audio track');
+        // La transcripción se maneja automáticamente por LiveKit
       }
     };
-    sendTestMessage();
+    setupTranscriptionAgent();
 
     return () => {
-      localParticipant.off(RoomEvent.DataReceived, handleMessage);
+      localParticipant.off(RoomEvent.DataReceived, handleData);
     };
   }, [localParticipant, webinarId]);
 
@@ -153,16 +146,6 @@ const WebinarContent = ({
 
     setIsAskingQuestion(true);
     try {
-      // Publicar la pregunta
-      const questionMsg = {
-        type: 'question',
-        content: question
-      };
-      await localParticipant.publishData(
-        new TextEncoder().encode(JSON.stringify(questionMsg)),
-        DataPacket_Kind.RELIABLE
-      );
-
       const { data, error } = await supabase.functions.invoke('webinar-agent', {
         body: {
           action: 'ask_question',
@@ -172,19 +155,10 @@ const WebinarContent = ({
       });
 
       if (error) throw error;
+      
       console.log('Answer received:', data);
       setAnswer(data.answer);
       setQuestion("");
-
-      // Publicar la respuesta
-      const answerMsg = {
-        type: 'answer',
-        content: data.answer
-      };
-      await localParticipant.publishData(
-        new TextEncoder().encode(JSON.stringify(answerMsg)),
-        DataPacket_Kind.RELIABLE
-      );
 
     } catch (error) {
       console.error('Error asking question:', error);
