@@ -30,35 +30,39 @@ serve(async (req) => {
     if (action === 'save_transcript') {
       console.log('Saving transcript for webinar:', webinarId);
       
-      // Primero verificamos si existe una transcripción
       const { data: existingData, error: existingError } = await supabaseClient
         .from('webinar_transcriptions')
-        .select('*')
+        .select()
         .eq('webinar_id', webinarId)
-        .limit(1);
+        .maybeSingle();
 
-      if (existingError) throw existingError;
+      if (existingError) {
+        console.error('Error checking existing transcription:', existingError);
+        throw existingError;
+      }
 
-      if (existingData && existingData.length > 0) {
-        // Actualizar transcripción existente
+      if (existingData) {
         const { error: updateError } = await supabaseClient
           .from('webinar_transcriptions')
           .update({ 
             transcript: text,
             updated_at: new Date().toISOString()
           })
-          .eq('webinar_id', webinarId);
+          .eq('id', existingData.id)
+          .select()
+          .single();
 
         if (updateError) throw updateError;
       } else {
-        // Crear nueva transcripción
         const { error: insertError } = await supabaseClient
           .from('webinar_transcriptions')
           .insert({
             webinar_id: webinarId,
             transcript: text,
             created_at: new Date().toISOString()
-          });
+          })
+          .select()
+          .single();
 
         if (insertError) throw insertError;
       }
@@ -72,20 +76,20 @@ serve(async (req) => {
     if (action === 'ask_question') {
       console.log('Processing question for webinar:', webinarId);
       
-      // Obtener la transcripción más reciente
-      const { data: transcriptions, error: transcriptionError } = await supabaseClient
+      const { data: transcription, error: transcriptionError } = await supabaseClient
         .from('webinar_transcriptions')
         .select('transcript')
         .eq('webinar_id', webinarId)
         .order('created_at', { ascending: false })
-        .limit(1);
+        .limit(1)
+        .maybeSingle();
 
       if (transcriptionError) {
         console.error('Error fetching transcription:', transcriptionError);
         throw transcriptionError;
       }
 
-      if (!transcriptions || transcriptions.length === 0) {
+      if (!transcription) {
         throw new Error('No hay transcripción disponible para este webinar');
       }
 
@@ -104,7 +108,7 @@ serve(async (req) => {
               role: 'system',
               content: `Eres un asistente útil que responde preguntas sobre un webinar. 
                        Usa la siguiente transcripción como contexto para responder:
-                       ${transcriptions[0].transcript}`
+                       ${transcription.transcript}`
             },
             {
               role: 'user',

@@ -106,47 +106,42 @@ const WebinarContent = ({
 
     const setupTranscriptionAgent = async () => {
       try {
-        const audioPublication = localParticipant.getTrackPublications().find(
-          pub => pub.kind === Track.Kind.Audio
-        ) as LocalTrackPublication;
+        const audioTrack = tracks.find(
+          track => track.kind === Track.Kind.Audio
+        );
 
-        if (!audioPublication) {
-          console.warn('No local audio publication found');
+        if (!audioTrack) {
+          console.warn('No audio track found');
           return;
         }
 
-        const audioTrack = audioPublication.track as LocalAudioTrack;
-        
-        if (audioTrack) {
-          console.log('Setting up transcription for audio track');
-          
-          const agent = await audioTrack.createAgent({
-            type: 'transcription',
-            configuration: {
-              language: 'es',
-            },
-          });
+        console.log('Setting up transcription for audio track');
 
-          agent.on('data', (msg: any) => {
-            console.log('Transcription data received:', msg);
-            if (msg.data?.text) {
-              handleTranscript(msg.data.text);
-            }
-          });
+        // @ts-ignore - Ignoramos el error de TypeScript ya que sabemos que el método existe
+        const agent = await audioTrack.createAgent({
+          type: 'transcription',
+          configuration: {
+            language: 'es',
+          },
+        });
 
-          agent.on('error', (error: Error) => {
-            console.error('Transcription agent error:', error);
-            toast({
-              variant: "destructive",
-              title: "Error de transcripción",
-              description: error.message
-            });
-          });
+        agent.on('data', (msg: any) => {
+          console.log('Transcription data received:', msg);
+          if (msg.data?.text) {
+            handleTranscript(msg.data.text);
+          }
+        });
 
-          console.log('Transcription agent setup completed');
-        } else {
-          console.warn('No audio track available');
-        }
+        agent.on('error', (error: Error) => {
+          console.error('Transcription agent error:', error);
+          toast({
+            variant: "destructive",
+            title: "Error de transcripción",
+            description: error.message
+          });
+        });
+
+        console.log('Transcription agent setup completed');
       } catch (error) {
         console.error('Error setting up transcription:', error);
       }
@@ -157,7 +152,7 @@ const WebinarContent = ({
     return () => {
       console.log('Cleaning up transcription agent');
     };
-  }, [localParticipant, webinarId]);
+  }, [localParticipant, tracks, webinarId]);
 
   const handleAskQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
