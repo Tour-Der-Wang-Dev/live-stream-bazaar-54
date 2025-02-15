@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useParams, useNavigate } from "react-router-dom";
@@ -7,13 +7,17 @@ import {
   VideoConference,
   PreJoin,
   LocalUserChoices,
-  useRoom,
-  RoomEvent,
-  DataPacket_Kind,
-  RemoteParticipant,
-  LocalParticipant,
-  Track
+  useLocalParticipant,
+  useRemoteParticipants,
+  useTracks,
 } from "@livekit/components-react";
+import {
+  Track,
+  RoomEvent,
+  Room,
+  RemoteParticipant,
+  LocalParticipant
+} from 'livekit-client';
 import "@livekit/components-styles";
 import { motion } from "framer-motion";
 import { Webinar } from "@/types/webinar";
@@ -67,13 +71,61 @@ const WebinarRoom = () => {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [isAskingQuestion, setIsAskingQuestion] = useState(false);
-  const room = useRoom();
+  const { localParticipant } = useLocalParticipant();
+  const remoteParticipants = useRemoteParticipants();
+  const tracks = useTracks();
 
-  const { data: webinar, isLoading } = useQuery({
-    queryKey: ['webinar', id],
-    queryFn: () => fetchWebinar(id || ''),
-    enabled: !!id
-  });
+  useEffect(() => {
+    if (!localParticipant) return;
+
+    const handleTranscript = async (transcript: string) => {
+      try {
+        const { error } = await supabase.functions.invoke('webinar-agent', {
+          body: {
+            action: 'save_transcript',
+            webinarId: id,
+            text: transcript
+          }
+        });
+
+        if (error) throw error;
+        setTranscript(prev => prev + " " + transcript);
+      } catch (error) {
+        console.error('Error saving transcript:', error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "No se pudo guardar la transcripción"
+        });
+      }
+    };
+
+    // Configurar transcripción para pistas de audio
+    tracks.forEach(track => {
+      if (track.kind === Track.Kind.Audio) {
+        const audioTrack = track.mediaTrack;
+        if (audioTrack) {
+          // Iniciar transcripción
+          console.log('Iniciando transcripción para pista de audio');
+          track.on(RoomEvent.TranscriptionMessage, (msg: any) => {
+            if (msg.text) {
+              console.log('Transcripción recibida:', msg.text);
+              handleTranscript(msg.text);
+            }
+          });
+        }
+      }
+    });
+
+    // Limpiar listeners cuando el componente se desmonte
+    return () => {
+      tracks.forEach(track => {
+        if (track.kind === Track.Kind.Audio) {
+          track.off(RoomEvent.TranscriptionMessage);
+        }
+      });
+    };
+  }, [localParticipant, tracks, id]);
 
   const generateToken = async (participantName: string): Promise<string> => {
     try {
@@ -133,59 +185,6 @@ const WebinarRoom = () => {
       setIsJoining(false);
     }
   };
-
-  useEffect(() => {
-    if (!room) return;
-
-    const handleTranscript = async (transcript: string) => {
-      try {
-        const { error } = await supabase.functions.invoke('webinar-agent', {
-          body: {
-            action: 'save_transcript',
-            webinarId: id,
-            text: transcript
-          }
-        });
-
-        if (error) throw error;
-        setTranscript(prev => prev + " " + transcript);
-      } catch (error) {
-        console.error('Error saving transcript:', error);
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "No se pudo guardar la transcripción"
-        });
-      }
-    };
-
-    // Configurar el manejo de transcripción para cada participante
-    const setupTranscriptionForParticipant = (participant: LocalParticipant | RemoteParticipant) => {
-      participant.on(RoomEvent.TrackSubscribed, (track: Track) => {
-        if (track.kind === Track.Kind.Audio) {
-          // Activar transcripción para pista de audio
-          track.startTranscription();
-          
-          // Escuchar eventos de transcripción
-          track.on(RoomEvent.TranscriptionMessage, (msg) => {
-            if (msg.text) {
-              handleTranscript(msg.text);
-            }
-          });
-        }
-      });
-    };
-
-    // Configurar para participantes existentes
-    room.participants.forEach(setupTranscriptionForParticipant);
-
-    // Configurar para nuevos participantes
-    room.on(RoomEvent.ParticipantConnected, setupTranscriptionForParticipant);
-
-    return () => {
-      room.off(RoomEvent.ParticipantConnected);
-    };
-  }, [room, id]);
 
   const handleAskQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
