@@ -114,14 +114,15 @@ const WebinarRoom = () => {
         const track = publication.track;
         if (track) {
           console.log('Iniciando transcripción para pista de audio');
-          track.enableAutoSubscribe();
-          publication.setSubscribed(true);
+          
+          // Suscribirse automáticamente a la pista
+          publication.subscribe();
           
           // Manejar eventos de transcripción
-          track.on('transcriptionDataReceived', (data: any) => {
-            if (data && data.text) {
-              console.log('Transcripción recibida:', data.text);
-              handleTranscript(data.text);
+          track.on('message', (msg: { text: string }) => {
+            if (msg && msg.text) {
+              console.log('Transcripción recibida:', msg.text);
+              handleTranscript(msg.text);
             }
           });
         }
@@ -132,16 +133,17 @@ const WebinarRoom = () => {
     localParticipant.audioTracks.forEach(handleAudioTrack);
 
     // Suscribirse a nuevas pistas
-    localParticipant.on('trackPublished', handleAudioTrack);
+    localParticipant.on(RoomEvent.TrackPublished, handleAudioTrack);
 
     return () => {
       localParticipant.audioTracks.forEach(publication => {
         const track = publication.track;
         if (track) {
-          track.off('transcriptionDataReceived');
+          track.off('message', () => {});
+          publication.unsubscribe();
         }
       });
-      localParticipant.off('trackPublished');
+      localParticipant.off(RoomEvent.TrackPublished, handleAudioTrack);
     };
   }, [localParticipant, id]);
 
