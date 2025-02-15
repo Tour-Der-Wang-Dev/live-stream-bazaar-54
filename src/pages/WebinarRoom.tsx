@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -109,41 +108,28 @@ const WebinarRoom = () => {
     };
 
     // Configurar transcripción para participante local
-    const handleAudioTrack = (publication: TrackPublication) => {
-      if (publication.kind === Track.Kind.Audio) {
-        const track = publication.track;
-        if (track) {
-          console.log('Iniciando transcripción para pista de audio');
-          
-          // Suscribirse automáticamente a la pista
-          publication.subscribe();
-          
-          // Manejar eventos de transcripción
-          track.on('message', (msg: { text: string }) => {
-            if (msg && msg.text) {
-              console.log('Transcripción recibida:', msg.text);
-              handleTranscript(msg.text);
-            }
-          });
-        }
+    const handleAudioTrack = (track: TrackPublication) => {
+      if (track.kind === Track.Kind.Audio) {
+        console.log('Nueva pista de audio detectada');
+        
+        track.on('message', (msg: string) => {
+          console.log('Mensaje recibido:', msg);
+          handleTranscript(msg);
+        });
       }
     };
 
     // Suscribirse a pistas existentes
-    localParticipant.audioTracks.forEach(handleAudioTrack);
+    localParticipant.tracks.forEach(handleAudioTrack);
 
     // Suscribirse a nuevas pistas
-    localParticipant.on(RoomEvent.TrackPublished, handleAudioTrack);
+    localParticipant.on('trackPublished', handleAudioTrack);
 
     return () => {
-      localParticipant.audioTracks.forEach(publication => {
-        const track = publication.track;
-        if (track) {
-          track.off('message', () => {});
-          publication.unsubscribe();
-        }
+      localParticipant.tracks.forEach(track => {
+        track.off('message');
       });
-      localParticipant.off(RoomEvent.TrackPublished, handleAudioTrack);
+      localParticipant.off('trackPublished', handleAudioTrack);
     };
   }, [localParticipant, id]);
 
