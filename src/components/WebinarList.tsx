@@ -1,12 +1,14 @@
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, User } from "lucide-react";
+import { Calendar, User, Clock } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Webinar } from "@/types/webinar";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
 const fetchWebinars = async (): Promise<Webinar[]> => {
   const { data, error } = await supabase
@@ -38,22 +40,27 @@ const WebinarList = () => {
 
   if (isLoading) {
     return (
-      <div className="text-center py-8">
-        <p>Cargando webinars...</p>
+      <div className="text-center py-12">
+        <div className="animate-pulse space-y-4">
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="max-w-2xl mx-auto p-6 opacity-50" />
+          ))}
+        </div>
       </div>
     );
   }
 
   if (!webinars?.length) {
     return (
-      <div className="text-center py-8">
-        <p>No hay webinars programados.</p>
-      </div>
+      <Card className="max-w-2xl mx-auto p-8 text-center">
+        <h3 className="text-xl font-semibold mb-2">No hay webinars programados</h3>
+        <p className="text-gray-500 mb-4">Sé el primero en crear un webinar</p>
+      </Card>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className="space-y-6 max-w-4xl mx-auto">
       {webinars.map((webinar, index) => (
         <motion.div
           key={webinar.id}
@@ -61,25 +68,41 @@ const WebinarList = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: index * 0.1 }}
         >
-          <Card className="p-6 hover:shadow-lg transition-shadow duration-300">
-            <div className="flex items-center mb-4">
-              <Calendar className="h-5 w-5 text-gray-500 mr-2" />
-              <span className="text-sm text-gray-500">
-                {webinar.startTime.toLocaleDateString()}
-              </span>
+          <Card className="p-6 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1">
+            <div className="flex flex-col md:flex-row gap-6">
+              <div className="flex-1">
+                <h3 className="text-2xl font-semibold mb-3">{webinar.title}</h3>
+                <p className="text-gray-600 mb-4">{webinar.description}</p>
+                
+                <div className="space-y-2">
+                  <div className="flex items-center text-gray-500">
+                    <Calendar className="h-5 w-5 mr-2" />
+                    <span>
+                      {format(webinar.startTime, "EEEE d 'de' MMMM 'de' yyyy", { locale: es })}
+                    </span>
+                  </div>
+                  
+                  <div className="flex items-center text-gray-500">
+                    <Clock className="h-5 w-5 mr-2" />
+                    <span>{format(webinar.startTime, "HH:mm 'hrs'")}</span>
+                  </div>
+                  
+                  <div className="flex items-center text-gray-500">
+                    <User className="h-5 w-5 mr-2" />
+                    <span>{webinar.hostName}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="flex md:flex-col justify-end items-stretch md:min-w-[200px]">
+                <Button 
+                  onClick={() => navigate(`/webinar/${webinar.id}`)}
+                  className="w-full bg-black hover:bg-gray-800 text-white"
+                >
+                  Unirse al Webinar
+                </Button>
+              </div>
             </div>
-            <h3 className="text-xl font-semibold mb-2">{webinar.title}</h3>
-            <p className="text-gray-600 mb-4">{webinar.description}</p>
-            <div className="flex items-center mb-4">
-              <User className="h-5 w-5 text-gray-500 mr-2" />
-              <span className="text-sm text-gray-500">{webinar.hostName}</span>
-            </div>
-            <Button 
-              onClick={() => navigate(`/webinar/${webinar.id}`)}
-              className="w-full bg-black hover:bg-gray-800 text-white"
-            >
-              Unirse al Webinar
-            </Button>
           </Card>
         </motion.div>
       ))}
