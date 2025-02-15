@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3"
 import "https://deno.land/x/xhr@0.1.0/mod.ts"
@@ -28,11 +27,16 @@ serve(async (req) => {
     )
 
     if (action === 'save_transcript') {
+      if (!webinarId || !text) {
+        throw new Error('webinarId y text son requeridos');
+      }
+
       console.log('Saving transcript for webinar:', webinarId);
+      console.log('Transcript text:', text);
       
       const { data: existingData, error: existingError } = await supabaseClient
         .from('webinar_transcriptions')
-        .select()
+        .select('*')
         .eq('webinar_id', webinarId)
         .maybeSingle();
 
@@ -41,30 +45,50 @@ serve(async (req) => {
         throw existingError;
       }
 
+      let result;
+      
       if (existingData) {
+        console.log('Updating existing transcription:', existingData.id);
+        const newTranscript = existingData.transcript + " " + text;
+        
         const { error: updateError } = await supabaseClient
           .from('webinar_transcriptions')
           .update({ 
-            transcript: text,
+            transcript: newTranscript,
             updated_at: new Date().toISOString()
           })
           .eq('id', existingData.id);
 
-        if (updateError) throw updateError;
+        if (updateError) {
+          console.error('Error updating transcription:', updateError);
+          throw updateError;
+        }
+        
+        result = { id: existingData.id, transcript: newTranscript };
       } else {
-        const { error: insertError } = await supabaseClient
+        console.log('Creating new transcription for webinar:', webinarId);
+        const { data: insertData, error: insertError } = await supabaseClient
           .from('webinar_transcriptions')
           .insert({
             webinar_id: webinarId,
             transcript: text,
             created_at: new Date().toISOString()
-          });
+          })
+          .select()
+          .single();
 
-        if (insertError) throw insertError;
+        if (insertError) {
+          console.error('Error inserting transcription:', insertError);
+          throw insertError;
+        }
+        
+        result = insertData;
       }
 
+      console.log('Successfully saved transcript:', result);
+
       return new Response(
-        JSON.stringify({ success: true }),
+        JSON.stringify({ success: true, data: result }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -132,7 +156,10 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in edge function:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        error: error.message,
+        details: error.toString()
+      }),
       { 
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }

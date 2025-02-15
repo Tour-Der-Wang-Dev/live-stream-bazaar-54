@@ -84,24 +84,34 @@ const WebinarContent = ({
     console.log('Local participant ready:', localParticipant.identity);
 
     const handleTranscript = async (text: string) => {
+      if (!text.trim()) {
+        console.log('Empty transcript received, skipping');
+        return;
+      }
+
       console.log('Processing transcript:', text);
       try {
-        const { error } = await supabase.functions.invoke('webinar-agent', {
+        const { data, error } = await supabase.functions.invoke('webinar-agent', {
           body: {
             action: 'save_transcript',
             webinarId,
-            text
+            text: text.trim()
           }
         });
 
-        if (error) throw error;
-        setTranscript(prev => prev + " " + text);
-      } catch (error) {
+        if (error) {
+          console.error('Error from edge function:', error);
+          throw error;
+        }
+
+        console.log('Transcript saved successfully:', data);
+        setTranscript(prev => prev + " " + text.trim());
+      } catch (error: any) {
         console.error('Error saving transcript:', error);
         toast({
           variant: "destructive",
-          title: "Error",
-          description: "No se pudo guardar la transcripción"
+          title: "Error al procesar transcripción",
+          description: error.message || "No se pudo guardar la transcripción"
         });
       }
     };
@@ -110,7 +120,7 @@ const WebinarContent = ({
       try {
         console.log('Setting up transcription agent...');
         
-        // Acceder a los tracks locales a través de la propiedad tracks
+        // Acceder a los tracks locales
         const audioTrackPubs = localParticipant.tracks.values();
         const audioTrackPub = Array.from(audioTrackPubs).find(
           pub => pub.kind === Track.Kind.Audio
