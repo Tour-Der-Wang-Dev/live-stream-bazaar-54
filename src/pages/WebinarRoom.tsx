@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -8,17 +9,15 @@ import {
   PreJoin,
   LocalUserChoices,
   useLocalParticipant,
-  useRemoteParticipants,
+  useRoom,
   useTracks,
 } from "@livekit/components-react";
 import {
   Track,
   RoomEvent,
   Room,
-  RemoteParticipant,
-  LocalParticipant,
-  TrackPublication,
   DataPacket_Kind,
+  RemoteParticipant,
 } from 'livekit-client';
 import "@livekit/components-styles";
 import { motion } from "framer-motion";
@@ -73,25 +72,27 @@ const WebinarContent = ({
   const [answer, setAnswer] = useState("");
   const [isAskingQuestion, setIsAskingQuestion] = useState(false);
   const { toast } = useToast();
+  const room = useRoom();
   const { localParticipant } = useLocalParticipant();
-  const remoteParticipants = useRemoteParticipants();
-  const tracks = useTracks();
 
   useEffect(() => {
-    if (!localParticipant) return;
+    if (!room || !localParticipant) return;
 
-    const handleTranscript = async (transcript: string) => {
+    console.log('Room and local participant ready');
+
+    const handleTranscript = async (text: string) => {
+      console.log('Received transcript:', text);
       try {
         const { error } = await supabase.functions.invoke('webinar-agent', {
           body: {
             action: 'save_transcript',
             webinarId,
-            text: transcript
+            text
           }
         });
 
         if (error) throw error;
-        setTranscript(prev => prev + " " + transcript);
+        setTranscript(prev => prev + " " + text);
       } catch (error) {
         console.error('Error saving transcript:', error);
         toast({
@@ -102,27 +103,48 @@ const WebinarContent = ({
       }
     };
 
-    const handleDataReceived = (payload: Uint8Array, kind: DataPacket_Kind) => {
+    // Manejar mensajes de datos
+    const handleData = (msg: Uint8Array, participant?: RemoteParticipant, kind?: DataPacket_Kind) => {
       if (kind === DataPacket_Kind.RELIABLE) {
-        const text = new TextDecoder().decode(payload);
-        console.log('Transcripción recibida:', text);
+        const text = new TextDecoder().decode(msg);
+        console.log('Received data message:', text);
         handleTranscript(text);
       }
     };
 
-    localParticipant.on(RoomEvent.DataReceived, handleDataReceived);
+    // Suscribirse a eventos de datos
+    room.on(RoomEvent.DataReceived, handleData);
+
+    // Publicar mensaje de prueba (solo para verificar que funciona)
+    const sendTestMessage = async () => {
+      try {
+        const message = new TextEncoder().encode('Test message from ' + localParticipant.identity);
+        await room.localParticipant.publishData(message, DataPacket_Kind.RELIABLE);
+        console.log('Test message sent');
+      } catch (e) {
+        console.error('Error sending test message:', e);
+      }
+    };
+    sendTestMessage();
 
     return () => {
-      localParticipant.off(RoomEvent.DataReceived, handleDataReceived);
+      room.off(RoomEvent.DataReceived, handleData);
     };
-  }, [localParticipant, webinarId]);
+  }, [room, localParticipant, webinarId]);
 
   const handleAskQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!question.trim()) return;
+    if (!question.trim() || !room) return;
 
     setIsAskingQuestion(true);
     try {
+      // Publicar la pregunta al room
+      const questionMsg = new TextEncoder().encode(JSON.stringify({
+        type: 'question',
+        content: question
+      }));
+      await room.localParticipant.publishData(questionMsg, DataPacket_Kind.RELIABLE);
+
       const { data, error } = await supabase.functions.invoke('webinar-agent', {
         body: {
           action: 'ask_question',
@@ -132,8 +154,17 @@ const WebinarContent = ({
       });
 
       if (error) throw error;
+      console.log('Answer received:', data);
       setAnswer(data.answer);
       setQuestion("");
+
+      // Publicar la respuesta al room
+      const answerMsg = new TextEncoder().encode(JSON.stringify({
+        type: 'answer',
+        content: data.answer
+      }));
+      await room.localParticipant.publishData(answerMsg, DataPacket_Kind.RELIABLE);
+
     } catch (error) {
       console.error('Error asking question:', error);
       toast({
@@ -213,7 +244,6 @@ const WebinarRoom = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [token, setToken] = useState<string>("");
-  const [userName, setUserName] = useState("");
   const [error, setError] = useState("");
   const [isJoining, setIsJoining] = useState(false);
   const [liveKitUrl] = useState("wss://juliawebinars-brslrae2.livekit.cloud");
@@ -226,37 +256,27 @@ const WebinarRoom = () => {
 
   const generateToken = async (participantName: string): Promise<string> => {
     try {
-      console.log('Generando token para:', participantName);
-      
       if (!webinar?.roomName) {
         throw new Error('Nombre de sala no encontrado');
       }
 
-      console.log('Enviando solicitud al endpoint de LiveKit');
+      console.log('Generando token para:', participantName, 'en sala:', webinar.roomName);
       
       const { data, error } = await supabase.functions.invoke('generate-livekit-token', {
         body: {
           roomName: webinar.roomName,
-          participantName: participantName
+          participantName
         },
       });
 
-      if (error) {
-        console.error('Error completo:', error);
-        throw new Error('Error al generar el token de acceso: ' + error.message);
-      }
+      if (error) throw error;
+      if (!data?.token) throw new Error('Token no recibido');
 
-      if (!data?.token || typeof data.token !== 'string') {
-        console.error('Token inválido recibido:', data);
-        throw new Error('Token inválido recibido del servidor');
-      }
-
-      console.log('Token recibido (primeros 20 caracteres):', data.token.substring(0, 20));
+      console.log('Token generado exitosamente');
       return data.token;
-
-    } catch (err) {
-      console.error('Error al generar el token:', err);
-      throw err;
+    } catch (err: any) {
+      console.error('Error generando token:', err);
+      throw new Error('Error al generar el token de acceso: ' + err.message);
     }
   };
 
@@ -264,26 +284,26 @@ const WebinarRoom = () => {
     try {
       setIsJoining(true);
       setError('');
-      console.log('Iniciando proceso de unión al webinar para:', values.username);
-
+      
+      console.log('Iniciando proceso de unión al webinar');
       const newToken = await generateToken(values.username);
-      console.log('Token válido obtenido, longitud:', newToken.length);
+      
+      console.log('Token obtenido, conectando a LiveKit');
       setToken(newToken);
-      setUserName(values.username);
     } catch (err: any) {
       console.error('Error al unirse al webinar:', err);
-      setError(err.message || 'Error al unirse al webinar. Por favor, intente nuevamente.');
+      setError(err.message);
       toast({
         variant: "destructive",
-        title: "Error",
-        description: err.message || "No se pudo unir al webinar. Por favor, verifique la configuración."
+        title: "Error al unirse",
+        description: err.message
       });
     } finally {
       setIsJoining(false);
     }
   };
 
-  if (isLoading) {
+  if (isLoading || !webinar) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
         <Card className="p-8 shadow-xl">
@@ -291,22 +311,6 @@ const WebinarRoom = () => {
             <div className="h-6 w-32 bg-gray-200 dark:bg-gray-700 rounded mb-4"></div>
             <div className="h-4 w-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
           </div>
-        </Card>
-      </div>
-    );
-  }
-
-  if (!webinar) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
-        <Card className="p-8 shadow-xl">
-          <h2 className="text-2xl font-semibold mb-6 text-center">Webinar no encontrado</h2>
-          <Button 
-            onClick={() => navigate('/')} 
-            className="w-full bg-black hover:bg-gray-800"
-          >
-            Volver al inicio
-          </Button>
         </Card>
       </div>
     );
@@ -321,7 +325,10 @@ const WebinarRoom = () => {
           connect={true}
           video={true}
           audio={true}
-          onDisconnected={() => navigate("/")}
+          onDisconnected={() => {
+            console.log('Desconectado de LiveKit');
+            navigate("/");
+          }}
         >
           <WebinarContent webinarId={id || ''} onDisconnect={() => navigate("/")} />
         </LiveKitRoom>
@@ -351,11 +358,6 @@ const WebinarRoom = () => {
                     {webinar.startTime.toLocaleTimeString()}
                   </p>
                 </div>
-              </div>
-
-              <div className="bg-gray-50 dark:bg-gray-800 p-6 rounded-lg mb-8">
-                <h3 className="text-lg font-semibold mb-2">Anfitrión</h3>
-                <p className="text-gray-700 dark:text-gray-300">{webinar.hostName}</p>
               </div>
 
               <PreJoin
