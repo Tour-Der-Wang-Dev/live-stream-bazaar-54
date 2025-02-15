@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -17,7 +18,8 @@ import {
   Room,
   RemoteParticipant,
   LocalParticipant,
-  TrackPublication
+  TrackPublication,
+  DataPacket_Kind
 } from 'livekit-client';
 import "@livekit/components-styles";
 import { motion } from "framer-motion";
@@ -107,15 +109,17 @@ const WebinarRoom = () => {
       }
     };
 
+    const handleData = (data: Uint8Array) => {
+      const text = new TextDecoder().decode(data);
+      console.log('Transcripción recibida:', text);
+      handleTranscript(text);
+    };
+
     // Configurar transcripción para participante local
     const handleAudioTrack = (track: TrackPublication) => {
       if (track.kind === Track.Kind.Audio) {
         console.log('Nueva pista de audio detectada');
-        
-        track.on('message', (msg: string) => {
-          console.log('Mensaje recibido:', msg);
-          handleTranscript(msg);
-        });
+        track.on('datapublished', handleData);
       }
     };
 
@@ -127,7 +131,9 @@ const WebinarRoom = () => {
 
     return () => {
       localParticipant.tracks.forEach(track => {
-        track.off('message');
+        if (track.kind === Track.Kind.Audio) {
+          track.off('datapublished', handleData);
+        }
       });
       localParticipant.off('trackPublished', handleAudioTrack);
     };
