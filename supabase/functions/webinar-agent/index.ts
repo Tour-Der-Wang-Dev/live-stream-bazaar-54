@@ -48,9 +48,7 @@ serve(async (req) => {
             transcript: text,
             updated_at: new Date().toISOString()
           })
-          .eq('id', existingData.id)
-          .select()
-          .single();
+          .eq('id', existingData.id);
 
         if (updateError) throw updateError;
       } else {
@@ -60,9 +58,7 @@ serve(async (req) => {
             webinar_id: webinarId,
             transcript: text,
             created_at: new Date().toISOString()
-          })
-          .select()
-          .single();
+          });
 
         if (insertError) throw insertError;
       }
