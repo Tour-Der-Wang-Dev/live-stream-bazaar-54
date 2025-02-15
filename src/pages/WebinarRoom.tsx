@@ -1,5 +1,6 @@
-
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   LiveKitRoom,
@@ -56,6 +57,10 @@ const WebinarRoom = () => {
   const [error, setError] = useState("");
   const [isJoining, setIsJoining] = useState(false);
   const [liveKitUrl] = useState("wss://juliawebinars-brslrae2.livekit.cloud");
+  const [transcript, setTranscript] = useState("");
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [isAskingQuestion, setIsAskingQuestion] = useState(false);
 
   const { data: webinar, isLoading } = useQuery({
     queryKey: ['webinar', id],
@@ -122,6 +127,58 @@ const WebinarRoom = () => {
     }
   };
 
+  const handleTranscription = useCallback(async (text: string) => {
+    try {
+      // Guardar la transcripción en la base de datos
+      const { error } = await supabase.functions.invoke('webinar-agent', {
+        body: {
+          action: 'save_transcript',
+          webinarId: id,
+          text
+        }
+      });
+
+      if (error) throw error;
+      setTranscript(text);
+    } catch (error) {
+      console.error('Error saving transcript:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo guardar la transcripción"
+      });
+    }
+  }, [id]);
+
+  const handleAskQuestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!question.trim()) return;
+
+    setIsAskingQuestion(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('webinar-agent', {
+        body: {
+          action: 'ask_question',
+          webinarId: id,
+          question
+        }
+      });
+
+      if (error) throw error;
+      setAnswer(data.answer);
+      setQuestion("");
+    } catch (error) {
+      console.error('Error asking question:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "No se pudo procesar tu pregunta"
+      });
+    } finally {
+      setIsAskingQuestion(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center">
@@ -148,15 +205,58 @@ const WebinarRoom = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       {token ? (
-        <LiveKitRoom
-          token={token}
-          serverUrl={liveKitUrl}
-          connect={true}
-          video={true}
-          audio={true}
-        >
-          <VideoConference />
-        </LiveKitRoom>
+        <div className="h-screen flex flex-col">
+          <LiveKitRoom
+            token={token}
+            serverUrl={liveKitUrl}
+            connect={true}
+            video={true}
+            audio={true}
+            onDisconnected={() => navigate("/")}
+          >
+            <div className="flex-1">
+              <VideoConference />
+            </div>
+            
+            <div className="h-1/3 bg-white dark:bg-gray-800 border-t">
+              <div className="container mx-auto p-4 h-full flex gap-4">
+                <div className="flex-1 flex flex-col">
+                  <h3 className="text-lg font-semibold mb-2">Transcripción en vivo</h3>
+                  <ScrollArea className="flex-1 p-4 border rounded-lg">
+                    <p className="whitespace-pre-wrap">{transcript}</p>
+                  </ScrollArea>
+                </div>
+
+                <div className="w-96 flex flex-col">
+                  <h3 className="text-lg font-semibold mb-2">Preguntas al agente</h3>
+                  <ScrollArea className="flex-1 p-4 border rounded-lg mb-4">
+                    {answer && (
+                      <div className="mb-4 p-3 bg-gray-100 dark:bg-gray-700 rounded">
+                        <p className="text-sm">{answer}</p>
+                      </div>
+                    )}
+                  </ScrollArea>
+
+                  <form onSubmit={handleAskQuestion} className="flex gap-2">
+                    <Input
+                      value={question}
+                      onChange={(e) => setQuestion(e.target.value)}
+                      placeholder="Haz una pregunta sobre el webinar..."
+                      disabled={isAskingQuestion}
+                    />
+                    <Button 
+                      type="submit" 
+                      disabled={isAskingQuestion}
+                      className="bg-black hover:bg-gray-800 text-white"
+                    >
+                      Preguntar
+                    </Button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </LiveKitRoom>
+        </div>
       ) : (
         <div className="container mx-auto px-4 py-16">
           <motion.div

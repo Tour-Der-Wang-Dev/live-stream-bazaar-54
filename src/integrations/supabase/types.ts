@@ -57,6 +57,35 @@ export type Database = {
         }
         Relationships: []
       }
+      webinar_transcriptions: {
+        Row: {
+          created_at: string
+          id: string
+          transcript: string
+          webinar_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          transcript: string
+          webinar_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          transcript?: string
+          webinar_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webinar_transcriptions_webinar_id_fkey"
+            columns: ["webinar_id"]
+            isOneToOne: false
+            referencedRelation: "webinars"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       webinars: {
         Row: {
           created_at: string | null
