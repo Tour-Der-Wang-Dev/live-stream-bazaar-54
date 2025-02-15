@@ -7,6 +7,12 @@ import {
   VideoConference,
   PreJoin,
   LocalUserChoices,
+  useRoom,
+  RoomEvent,
+  DataPacket_Kind,
+  RemoteParticipant,
+  LocalParticipant,
+  Track
 } from "@livekit/components-react";
 import "@livekit/components-styles";
 import { motion } from "framer-motion";
@@ -61,6 +67,7 @@ const WebinarRoom = () => {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [isAskingQuestion, setIsAskingQuestion] = useState(false);
+  const room = useRoom();
 
   const { data: webinar, isLoading } = useQuery({
     queryKey: ['webinar', id],
@@ -127,28 +134,58 @@ const WebinarRoom = () => {
     }
   };
 
-  const handleTranscription = useCallback(async (text: string) => {
-    try {
-      // Guardar la transcripción en la base de datos
-      const { error } = await supabase.functions.invoke('webinar-agent', {
-        body: {
-          action: 'save_transcript',
-          webinarId: id,
-          text
+  useEffect(() => {
+    if (!room) return;
+
+    const handleTranscript = async (transcript: string) => {
+      try {
+        const { error } = await supabase.functions.invoke('webinar-agent', {
+          body: {
+            action: 'save_transcript',
+            webinarId: id,
+            text: transcript
+          }
+        });
+
+        if (error) throw error;
+        setTranscript(prev => prev + " " + transcript);
+      } catch (error) {
+        console.error('Error saving transcript:', error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "No se pudo guardar la transcripción"
+        });
+      }
+    };
+
+    // Configurar el manejo de transcripción para cada participante
+    const setupTranscriptionForParticipant = (participant: LocalParticipant | RemoteParticipant) => {
+      participant.on(RoomEvent.TrackSubscribed, (track: Track) => {
+        if (track.kind === Track.Kind.Audio) {
+          // Activar transcripción para pista de audio
+          track.startTranscription();
+          
+          // Escuchar eventos de transcripción
+          track.on(RoomEvent.TranscriptionMessage, (msg) => {
+            if (msg.text) {
+              handleTranscript(msg.text);
+            }
+          });
         }
       });
+    };
 
-      if (error) throw error;
-      setTranscript(text);
-    } catch (error) {
-      console.error('Error saving transcript:', error);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "No se pudo guardar la transcripción"
-      });
-    }
-  }, [id]);
+    // Configurar para participantes existentes
+    room.participants.forEach(setupTranscriptionForParticipant);
+
+    // Configurar para nuevos participantes
+    room.on(RoomEvent.ParticipantConnected, setupTranscriptionForParticipant);
+
+    return () => {
+      room.off(RoomEvent.ParticipantConnected);
+    };
+  }, [room, id]);
 
   const handleAskQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
