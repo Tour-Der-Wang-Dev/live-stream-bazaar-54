@@ -77,19 +77,29 @@ const WebinarContent = ({
 
   useEffect(() => {
     if (!localParticipant) {
-      console.log('No local participant yet');
+      console.log('[Transcription] No local participant yet');
       return;
     }
     
-    console.log('Local participant ready:', localParticipant.identity);
+    console.log('[Transcription] Local participant ready:', {
+      identity: localParticipant.identity,
+      hasAudioTrack: Array.from(localParticipant.tracks.values()).some(pub => pub.kind === Track.Kind.Audio),
+      trackCount: localParticipant.tracks.size,
+      tracks: Array.from(localParticipant.tracks.values()).map(pub => ({
+        kind: pub.kind,
+        name: pub.trackName,
+        enabled: pub.isEnabled,
+        muted: pub.isMuted
+      }))
+    });
 
     const handleTranscript = async (text: string) => {
       if (!text.trim()) {
-        console.log('Empty transcript received, skipping');
+        console.log('[Transcription] Empty transcript received, skipping');
         return;
       }
 
-      console.log('Processing transcript:', text);
+      console.log('[Transcription] Processing text:', text.trim());
       try {
         const { data, error } = await supabase.functions.invoke('webinar-agent', {
           body: {
@@ -100,14 +110,14 @@ const WebinarContent = ({
         });
 
         if (error) {
-          console.error('Error from edge function:', error);
+          console.error('[Transcription] Error from edge function:', error);
           throw error;
         }
 
-        console.log('Transcript saved successfully:', data);
+        console.log('[Transcription] Saved successfully:', data);
         setTranscript(prev => prev + " " + text.trim());
       } catch (error: any) {
-        console.error('Error saving transcript:', error);
+        console.error('[Transcription] Error saving:', error);
         toast({
           variant: "destructive",
           title: "Error al procesar transcripción",
@@ -118,48 +128,65 @@ const WebinarContent = ({
 
     const setupTranscriptionAgent = async () => {
       try {
-        console.log('Setting up transcription agent...');
+        console.log('[Transcription] Setting up agent...');
         
-        // Acceder a los tracks locales
-        const audioTrackPubs = localParticipant.tracks.values();
-        const audioTrackPub = Array.from(audioTrackPubs).find(
-          pub => pub.kind === Track.Kind.Audio
-        );
+        // Verificar tracks de audio
+        const tracks = Array.from(localParticipant.tracks.values());
+        console.log('[Transcription] Available tracks:', tracks.map(t => ({
+          kind: t.kind,
+          name: t.trackName,
+          enabled: t.isEnabled
+        })));
 
-        if (!audioTrackPub) {
-          console.warn('No audio publication found');
-          return;
-        }
+        const audioTrack = tracks
+          .find(pub => pub.kind === Track.Kind.Audio)
+          ?.track;
 
-        console.log('Found audio publication:', audioTrackPub);
-
-        const audioTrack = audioTrackPub.track;
         if (!audioTrack) {
-          console.warn('No audio track in publication');
+          console.warn('[Transcription] No audio track found');
           return;
         }
 
-        console.log('Found audio track, attempting to create agent');
+        console.log('[Transcription] Found audio track:', {
+          name: audioTrack.name,
+          enabled: audioTrack.isEnabled,
+          muted: audioTrack.isMuted
+        });
 
-        // @ts-ignore
+        // Asegurarnos de que el track esté habilitado
+        if (!audioTrack.isEnabled) {
+          console.log('[Transcription] Enabling audio track');
+          await audioTrack.enable();
+        }
+
+        console.log('[Transcription] Creating agent with audio track');
+
+        // Crear el agente de transcripción
         const agent = await audioTrack.createAgent({
           type: 'transcription',
           configuration: {
             language: 'es',
-          },
+            onResult: (result: any) => {
+              console.log('[Transcription] Received result:', result);
+              if (result.text) {
+                handleTranscript(result.text);
+              }
+            }
+          }
         });
 
-        console.log('Transcription agent created successfully:', agent);
+        console.log('[Transcription] Agent created successfully:', agent);
 
+        // Manejar eventos del agente
         agent.on('data', (msg: any) => {
-          console.log('Transcription data received:', msg);
+          console.log('[Transcription] Data received:', msg);
           if (msg.data?.text) {
             handleTranscript(msg.data.text);
           }
         });
 
         agent.on('error', (error: Error) => {
-          console.error('Transcription agent error:', error);
+          console.error('[Transcription] Agent error:', error);
           toast({
             variant: "destructive",
             title: "Error de transcripción",
@@ -167,13 +194,21 @@ const WebinarContent = ({
           });
         });
 
-        console.log('Transcription agent setup completed');
-      } catch (error) {
-        console.error('Error setting up transcription:', error);
+        agent.on('start', () => {
+          console.log('[Transcription] Agent started');
+        });
+
+        agent.on('stop', () => {
+          console.log('[Transcription] Agent stopped');
+        });
+
+        console.log('[Transcription] Setup completed');
+      } catch (error: any) {
+        console.error('[Transcription] Setup error:', error);
         toast({
           variant: "destructive",
           title: "Error",
-          description: "Error al configurar la transcripción"
+          description: "Error al configurar la transcripción: " + error.message
         });
       }
     };
@@ -184,17 +219,20 @@ const WebinarContent = ({
         pub => pub.kind === Track.Kind.Audio
       );
 
+      console.log('[Transcription] Checking for audio track:', {
+        hasAudioTrack,
+        trackCount: localParticipant.tracks.size
+      });
+
       if (hasAudioTrack) {
         setupTranscriptionAgent();
         clearInterval(interval);
-      } else {
-        console.log('Waiting for audio track...');
       }
     }, 1000);
 
     return () => {
       clearInterval(interval);
-      console.log('Cleaning up transcription agent');
+      console.log('[Transcription] Cleanup completed');
     };
   }, [localParticipant, webinarId]);
 
