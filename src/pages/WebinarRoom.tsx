@@ -17,6 +17,7 @@ import {
   Room,
   DataPacket_Kind,
   RemoteParticipant,
+  AudioTrack,
 } from 'livekit-client';
 import "@livekit/components-styles";
 import { motion } from "framer-motion";
@@ -72,6 +73,7 @@ const WebinarContent = ({
   const [isAskingQuestion, setIsAskingQuestion] = useState(false);
   const { toast } = useToast();
   const { localParticipant } = useLocalParticipant();
+  const tracks = useTracks();
 
   useEffect(() => {
     if (!localParticipant) return;
@@ -101,44 +103,54 @@ const WebinarContent = ({
       }
     };
 
-    const handleData = (msg: Uint8Array) => {
+    const setupTranscriptionAgent = async () => {
       try {
-        const text = new TextDecoder().decode(msg);
-        console.log('Received data:', text);
-        
-        try {
-          const data = JSON.parse(text);
-          if (data.type === 'transcript') {
-            handleTranscript(data.content);
-          }
-        } catch {
-          // Si no es JSON, asumimos que es transcripción directa
-          handleTranscript(text);
+        const audioTrack = tracks.find(
+          track => track.kind === Track.Kind.Audio && track.source === Track.Source.Microphone
+        ) as AudioTrack;
+
+        if (audioTrack) {
+          console.log('Setting up transcription for audio track');
+          
+          // Configurar el agente de transcripción
+          const transcriptionOptions = {
+            language: 'es',
+            type: 'transcription',
+          };
+
+          audioTrack.setUserData(JSON.stringify(transcriptionOptions));
+
+          // Manejar eventos de transcripción
+          audioTrack.on('transcriptionMessage', (msg) => {
+            console.log('Transcription received:', msg);
+            if (msg.text) {
+              handleTranscript(msg.text);
+            }
+          });
+
+          // Activar transcripción
+          await audioTrack.enableTranscription();
+          console.log('Transcription enabled');
+        } else {
+          console.warn('No audio track found');
         }
       } catch (error) {
-        console.error('Error processing data:', error);
+        console.error('Error setting up transcription:', error);
       }
     };
 
-    // Suscribirse a eventos de datos
-    localParticipant.on(RoomEvent.DataReceived, handleData);
-
-    // Configurar agente de transcripción
-    const setupTranscriptionAgent = () => {
-      const tracks = localParticipant.getTracks();
-      const audioTrack = tracks.find(track => track.kind === Track.Kind.Audio);
-      
-      if (audioTrack) {
-        console.log('Setting up transcription for audio track');
-        // La transcripción se maneja automáticamente por LiveKit
-      }
-    };
     setupTranscriptionAgent();
 
     return () => {
-      localParticipant.off(RoomEvent.DataReceived, handleData);
+      const audioTrack = tracks.find(
+        track => track.kind === Track.Kind.Audio && track.source === Track.Source.Microphone
+      ) as AudioTrack;
+      
+      if (audioTrack) {
+        audioTrack.disableTranscription();
+      }
     };
-  }, [localParticipant, webinarId]);
+  }, [localParticipant, tracks, webinarId]);
 
   const handleAskQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
