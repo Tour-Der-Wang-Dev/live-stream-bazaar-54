@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -16,7 +17,8 @@ import {
   RoomEvent,
   Room,
   RemoteParticipant,
-  LocalParticipant
+  LocalParticipant,
+  TrackPublication
 } from 'livekit-client';
 import "@livekit/components-styles";
 import { motion } from "framer-motion";
@@ -75,6 +77,12 @@ const WebinarRoom = () => {
   const remoteParticipants = useRemoteParticipants();
   const tracks = useTracks();
 
+  const { data: webinar, isLoading } = useQuery({
+    queryKey: ['webinar', id],
+    queryFn: () => fetchWebinar(id || ''),
+    enabled: !!id
+  });
+
   useEffect(() => {
     if (!localParticipant) return;
 
@@ -100,32 +108,42 @@ const WebinarRoom = () => {
       }
     };
 
-    // Configurar transcripción para pistas de audio
-    tracks.forEach(track => {
-      if (track.kind === Track.Kind.Audio) {
-        const audioTrack = track.mediaTrack;
-        if (audioTrack) {
-          // Iniciar transcripción
+    // Configurar transcripción para participante local
+    const handleAudioTrack = (publication: TrackPublication) => {
+      if (publication.kind === Track.Kind.Audio) {
+        const track = publication.track;
+        if (track) {
           console.log('Iniciando transcripción para pista de audio');
-          track.on(RoomEvent.TranscriptionMessage, (msg: any) => {
-            if (msg.text) {
-              console.log('Transcripción recibida:', msg.text);
-              handleTranscript(msg.text);
+          track.enableAutoSubscribe();
+          publication.setSubscribed(true);
+          
+          // Manejar eventos de transcripción
+          track.on('transcriptionDataReceived', (data: any) => {
+            if (data && data.text) {
+              console.log('Transcripción recibida:', data.text);
+              handleTranscript(data.text);
             }
           });
         }
       }
-    });
+    };
 
-    // Limpiar listeners cuando el componente se desmonte
+    // Suscribirse a pistas existentes
+    localParticipant.audioTracks.forEach(handleAudioTrack);
+
+    // Suscribirse a nuevas pistas
+    localParticipant.on('trackPublished', handleAudioTrack);
+
     return () => {
-      tracks.forEach(track => {
-        if (track.kind === Track.Kind.Audio) {
-          track.off(RoomEvent.TranscriptionMessage);
+      localParticipant.audioTracks.forEach(publication => {
+        const track = publication.track;
+        if (track) {
+          track.off('transcriptionDataReceived');
         }
       });
+      localParticipant.off('trackPublished');
     };
-  }, [localParticipant, tracks, id]);
+  }, [localParticipant, id]);
 
   const generateToken = async (participantName: string): Promise<string> => {
     try {
@@ -301,14 +319,14 @@ const WebinarRoom = () => {
             transition={{ duration: 0.5 }}
           >
             <Card className="max-w-2xl mx-auto p-8">
-              <h1 className="text-3xl font-bold mb-4">{webinar?.title}</h1>
-              <p className="text-gray-600 dark:text-gray-300 mb-6">{webinar?.description}</p>
+              <h1 className="text-3xl font-bold mb-4">{webinar.title}</h1>
+              <p className="text-gray-600 dark:text-gray-300 mb-6">{webinar.description}</p>
               <div className="mb-6">
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Anfitrión: {webinar?.hostName}
+                  Anfitrión: {webinar.hostName}
                 </p>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Fecha: {webinar?.startTime.toLocaleDateString()}
+                  Fecha: {webinar.startTime.toLocaleDateString()}
                 </p>
               </div>
               <PreJoin
