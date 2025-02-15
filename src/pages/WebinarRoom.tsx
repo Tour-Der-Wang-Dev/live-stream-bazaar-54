@@ -17,7 +17,8 @@ import {
   Room,
   DataPacket_Kind,
   RemoteParticipant,
-  AudioTrack,
+  LocalTrackPublication,
+  LocalAudioTrack,
 } from 'livekit-client';
 import "@livekit/components-styles";
 import { motion } from "framer-motion";
@@ -105,34 +106,46 @@ const WebinarContent = ({
 
     const setupTranscriptionAgent = async () => {
       try {
-        const audioTrack = tracks.find(
-          track => track.kind === Track.Kind.Audio && track.source === Track.Source.Microphone
-        ) as AudioTrack;
+        const audioPublication = localParticipant.getTrackPublications().find(
+          pub => pub.kind === Track.Kind.Audio
+        ) as LocalTrackPublication;
 
+        if (!audioPublication) {
+          console.warn('No local audio publication found');
+          return;
+        }
+
+        const audioTrack = audioPublication.track as LocalAudioTrack;
+        
         if (audioTrack) {
           console.log('Setting up transcription for audio track');
           
-          // Configurar el agente de transcripción
-          const transcriptionOptions = {
-            language: 'es',
+          const agent = await audioTrack.createAgent({
             type: 'transcription',
-          };
+            configuration: {
+              language: 'es',
+            },
+          });
 
-          audioTrack.setUserData(JSON.stringify(transcriptionOptions));
-
-          // Manejar eventos de transcripción
-          audioTrack.on('transcriptionMessage', (msg) => {
-            console.log('Transcription received:', msg);
-            if (msg.text) {
-              handleTranscript(msg.text);
+          agent.on('data', (msg: any) => {
+            console.log('Transcription data received:', msg);
+            if (msg.data?.text) {
+              handleTranscript(msg.data.text);
             }
           });
 
-          // Activar transcripción
-          await audioTrack.enableTranscription();
-          console.log('Transcription enabled');
+          agent.on('error', (error: Error) => {
+            console.error('Transcription agent error:', error);
+            toast({
+              variant: "destructive",
+              title: "Error de transcripción",
+              description: error.message
+            });
+          });
+
+          console.log('Transcription agent setup completed');
         } else {
-          console.warn('No audio track found');
+          console.warn('No audio track available');
         }
       } catch (error) {
         console.error('Error setting up transcription:', error);
@@ -142,15 +155,9 @@ const WebinarContent = ({
     setupTranscriptionAgent();
 
     return () => {
-      const audioTrack = tracks.find(
-        track => track.kind === Track.Kind.Audio && track.source === Track.Source.Microphone
-      ) as AudioTrack;
-      
-      if (audioTrack) {
-        audioTrack.disableTranscription();
-      }
+      console.log('Cleaning up transcription agent');
     };
-  }, [localParticipant, tracks, webinarId]);
+  }, [localParticipant, webinarId]);
 
   const handleAskQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
