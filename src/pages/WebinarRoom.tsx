@@ -74,7 +74,7 @@ const WebinarContent = ({
   const [isAskingQuestion, setIsAskingQuestion] = useState(false);
   const { toast } = useToast();
   const { localParticipant } = useLocalParticipant();
-  const tracks = useTracks();
+  const audioTracks = useTracks([Track.Source.Microphone]);
 
   useEffect(() => {
     if (!localParticipant) return;
@@ -106,24 +106,28 @@ const WebinarContent = ({
 
     const setupTranscriptionAgent = async () => {
       try {
-        const audioTrack = tracks.find(
-          track => track.kind === Track.Kind.Audio
-        );
-
-        if (!audioTrack) {
-          console.warn('No audio track found');
+        if (audioTracks.length === 0) {
+          console.warn('No audio tracks found, waiting...');
           return;
         }
 
-        console.log('Setting up transcription for audio track');
+        const audioTrack = audioTracks[0].track;
+        
+        if (!audioTrack) {
+          console.warn('Audio track not ready');
+          return;
+        }
 
-        // @ts-ignore - Ignoramos el error de TypeScript ya que sabemos que el método existe
+        console.log('Found audio track, setting up transcription');
+
         const agent = await audioTrack.createAgent({
           type: 'transcription',
           configuration: {
             language: 'es',
           },
         });
+
+        console.log('Transcription agent created successfully');
 
         agent.on('data', (msg: any) => {
           console.log('Transcription data received:', msg);
@@ -144,15 +148,28 @@ const WebinarContent = ({
         console.log('Transcription agent setup completed');
       } catch (error) {
         console.error('Error setting up transcription:', error);
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Error al configurar la transcripción"
+        });
       }
     };
 
     setupTranscriptionAgent();
 
+    const interval = setInterval(() => {
+      if (audioTracks.length > 0 && audioTracks[0].track) {
+        setupTranscriptionAgent();
+        clearInterval(interval);
+      }
+    }, 1000);
+
     return () => {
+      clearInterval(interval);
       console.log('Cleaning up transcription agent');
     };
-  }, [localParticipant, tracks, webinarId]);
+  }, [localParticipant, audioTracks, webinarId]);
 
   const handleAskQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
