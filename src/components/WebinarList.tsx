@@ -52,13 +52,15 @@ const WebinarList = () => {
     queryKey: ['webinars'],
     queryFn: fetchWebinars,
     retry: 2,
-    onError: (error) => {
-      console.error('Query error:', error);
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar los webinars. Por favor, intenta de nuevo más tarde.",
-        variant: "destructive"
-      });
+    meta: {
+      onError: (error: Error) => {
+        console.error('Query error:', error);
+        toast({
+          title: "Error",
+          description: "No se pudieron cargar los webinars. Por favor, intenta de nuevo más tarde.",
+          variant: "destructive"
+        });
+      }
     }
   });
 
