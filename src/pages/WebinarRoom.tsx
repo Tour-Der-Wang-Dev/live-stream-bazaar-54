@@ -178,7 +178,7 @@ const WebinarContent = ({
             }
 
             // Aquí enviaríamos el audio a la Edge Function para procesarlo con Whisper
-            const audioData = audioTrack.getMediaStreamTrack();
+            const audioData = audioTrack.mediaStreamTrack; // Corregido: usando mediaStreamTrack en lugar de getMediaStreamTrack()
             // Por ahora simulamos la recepción de texto
             transcriptionBuffer = "Audio detectado y listo para procesar";
             await handleTranscript(transcriptionBuffer);
