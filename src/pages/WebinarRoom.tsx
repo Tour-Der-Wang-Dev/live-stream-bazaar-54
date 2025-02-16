@@ -22,6 +22,7 @@ import {
   LocalAudioTrack,
   VoiceAgentOptions,
   Agent,
+  createAudioAnalyser,
 } from 'livekit-client';
 import "@livekit/components-styles";
 import { motion } from "framer-motion";
@@ -77,7 +78,8 @@ const WebinarContent = ({
   const [isAskingQuestion, setIsAskingQuestion] = useState(false);
   const { toast } = useToast();
   const { localParticipant } = useLocalParticipant();
-  const [agent, setAgent] = useState<Agent | null>(null);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
 
   useEffect(() => {
     if (!localParticipant) {
@@ -124,9 +126,9 @@ const WebinarContent = ({
       }
     };
 
-    const setupTranscriptionAgent = async () => {
+    const setupTranscription = async () => {
       try {
-        console.log('[Transcription] Setting up agent...');
+        console.log('[Transcription] Setting up transcription...');
         
         // Verificar tracks de audio
         const tracks = Array.from(localParticipant.tracks.values());
@@ -152,54 +154,69 @@ const WebinarContent = ({
           enabled: audioTrack.mediaStreamTrack.enabled
         });
 
-        // Configuración del agente de voz
-        const voiceAgentOptions: VoiceAgentOptions = {
-          type: 'voice',
-          configuration: {
-            llm: {
-              provider: 'openai',
-              temperature: 0.7,
-              systemPrompt: "Eres un asistente que escucha y transcribe con precisión el audio en español.",
-            },
-            language: 'es',
-            sampleRate: 16000,
-            onTranscript: (result) => {
-              console.log('[Transcription] Transcript received:', result);
-              if (result.text) {
-                handleTranscript(result.text);
-              }
+        // Crear contexto de audio si no existe
+        if (!audioContext) {
+          const newAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+          setAudioContext(newAudioContext);
+        }
+
+        // Configurar analizador de audio para VAD
+        const analyser = createAudioAnalyser(audioTrack);
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        // Función para detectar actividad de voz
+        const checkVoiceActivity = () => {
+          analyser.getByteFrequencyData(dataArray);
+          const average = dataArray.reduce((a, b) => a + b) / bufferLength;
+          return average > 30; // Umbral de actividad de voz
+        };
+
+        // Iniciar proceso de transcripción
+        setIsTranscribing(true);
+        let transcriptionBuffer = "";
+        let silenceTimer: NodeJS.Timeout | null = null;
+
+        const processAudioChunk = async () => {
+          if (!isTranscribing) return;
+
+          if (checkVoiceActivity()) {
+            if (silenceTimer) {
+              clearTimeout(silenceTimer);
+              silenceTimer = null;
             }
+
+            // Aquí enviaríamos el audio a la Edge Function para procesarlo con Whisper
+            // Por ahora simulamos la recepción de texto
+            transcriptionBuffer += "Transcripción en proceso... ";
+            await handleTranscript(transcriptionBuffer);
+            transcriptionBuffer = "";
+          } else if (!silenceTimer) {
+            silenceTimer = setTimeout(() => {
+              if (transcriptionBuffer.trim()) {
+                handleTranscript(transcriptionBuffer);
+                transcriptionBuffer = "";
+              }
+            }, 1500); // Esperar 1.5s de silencio antes de procesar
           }
         };
 
-        // Crear el agente de voz
-        console.log('[Transcription] Creating voice agent...');
-        const newAgent = await audioTrack.createAgent(voiceAgentOptions);
-        setAgent(newAgent);
-
-        // Configurar eventos del agente
-        newAgent.on('start', () => {
-          console.log('[Transcription] Agent started');
-          toast({
-            title: "Transcripción iniciada",
-            description: "El audio está siendo procesado"
-          });
-        });
-
-        newAgent.on('stop', () => {
-          console.log('[Transcription] Agent stopped');
-        });
-
-        newAgent.on('error', (error) => {
-          console.error('[Transcription] Agent error:', error);
-          toast({
-            variant: "destructive",
-            title: "Error en la transcripción",
-            description: error.message
-          });
-        });
+        // Iniciar bucle de procesamiento
+        const processInterval = setInterval(processAudioChunk, 100);
 
         console.log('[Transcription] Setup completed');
+        toast({
+          title: "Transcripción iniciada",
+          description: "El audio está siendo procesado"
+        });
+
+        return () => {
+          clearInterval(processInterval);
+          if (silenceTimer) clearTimeout(silenceTimer);
+          if (audioContext) audioContext.close();
+          setIsTranscribing(false);
+          console.log('[Transcription] Cleanup completed');
+        };
       } catch (error: any) {
         console.error('[Transcription] Setup error:', error);
         toast({
@@ -210,7 +227,7 @@ const WebinarContent = ({
       }
     };
 
-    // Intentar configurar el agente cada segundo hasta que funcione
+    // Intentar configurar la transcripción cada segundo hasta que funcione
     const interval = setInterval(() => {
       const hasAudioTrack = Array.from(localParticipant.tracks.values()).some(
         pub => pub.kind === Track.Kind.Audio
@@ -222,18 +239,18 @@ const WebinarContent = ({
       });
 
       if (hasAudioTrack) {
-        setupTranscriptionAgent();
+        setupTranscription();
         clearInterval(interval);
       }
     }, 1000);
 
     return () => {
-      if (agent) {
-        console.log('[Transcription] Stopping agent...');
-        agent.stop();
-      }
       clearInterval(interval);
-      console.log('[Transcription] Cleanup completed');
+      setIsTranscribing(false);
+      if (audioContext) {
+        audioContext.close();
+        setAudioContext(null);
+      }
     };
   }, [localParticipant, webinarId]);
 
