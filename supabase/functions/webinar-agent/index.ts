@@ -108,7 +108,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4',
+          model: 'gpt-4o-mini',
           messages: [
             {
               role: 'system',
@@ -126,13 +126,55 @@ serve(async (req) => {
         }),
       });
 
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('OpenAI API error:', errorText);
+        throw new Error('Error al generar respuesta');
+      }
+
       const data = await response.json();
       if (!data.choices?.[0]?.message?.content) {
         throw new Error('No se pudo generar una respuesta');
       }
 
+      // Generate audio response using OpenAI TTS
+      const ttsResponse = await fetch('https://api.openai.com/v1/audio/speech', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'tts-1',
+          input: data.choices[0].message.content,
+          voice: 'alloy',
+          response_format: 'mp3',
+        }),
+      });
+
+      if (!ttsResponse.ok) {
+        console.error('TTS API error:', await ttsResponse.text());
+        // Return text only if TTS fails
+        return new Response(
+          JSON.stringify({ 
+            answer: data.choices[0].message.content,
+            audio: null 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Convert audio to base64
+      const audioBuffer = await ttsResponse.arrayBuffer();
+      const audioBase64 = btoa(
+        String.fromCharCode(...new Uint8Array(audioBuffer))
+      );
+
       return new Response(
-        JSON.stringify({ answer: data.choices[0].message.content }),
+        JSON.stringify({ 
+          answer: data.choices[0].message.content,
+          audio: audioBase64
+        }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
