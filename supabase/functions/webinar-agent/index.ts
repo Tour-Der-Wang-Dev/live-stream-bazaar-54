@@ -1,7 +1,5 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3"
-import "https://deno.land/x/xhr@0.1.0/mod.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,7 +14,7 @@ serve(async (req) => {
   try {
     // Read the body once at the beginning
     const requestBody = await req.json();
-    console.log('Received request body:', requestBody);
+    console.log('Received request body:', { action: requestBody.action });
 
     const { action, webinarId, text, question, audio } = requestBody;
     console.log('Processing action:', action);
@@ -164,17 +162,13 @@ serve(async (req) => {
         throw new Error('No audio data provided');
       }
 
-      // Convert base64 to Blob
-      const binaryStr = atob(audio);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
-      }
-      const blob = new Blob([bytes], { type: 'audio/webm' });
+      // Prepare the audio data for Whisper API
+      const audioData = await fetch(`data:audio/webm;base64,${audio}`);
+      const audioBlob = await audioData.blob();
 
-      // Create form data
+      // Create form data using native Deno FormData
       const formData = new FormData();
-      formData.append('file', blob, 'audio.webm');
+      formData.append('file', audioBlob, 'audio.webm');
       formData.append('model', 'whisper-1');
       formData.append('language', 'es');
 
