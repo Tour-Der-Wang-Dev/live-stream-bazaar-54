@@ -8,21 +8,29 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
-
   try {
-    // Using text() method directly which is more reliable in Deno
-    const rawBody = await req.text();
-    console.log('Raw body received:', rawBody);
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      return new Response('ok', { headers: corsHeaders })
+    }
+
+    // Clone request for safety
+    const reqClone = req.clone();
     
-    const requestBody = JSON.parse(rawBody);
-    console.log('Parsed request body:', requestBody);
+    // Parse request body
+    let requestBody;
+    try {
+      const text = await reqClone.text();
+      requestBody = JSON.parse(text);
+      console.log('Request body parsed:', { action: requestBody.action });
+    } catch (e) {
+      console.error('Error parsing request body:', e);
+      throw new Error('Invalid JSON in request body');
+    }
 
     const { action, webinarId, text, question, audio } = requestBody;
-    console.log('Processing action:', action);
 
+    // Initialize Supabase client
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
@@ -33,13 +41,13 @@ serve(async (req) => {
       }
     )
 
+    // Handle save transcript action
     if (action === 'save_transcript') {
       if (!webinarId || !text) {
         throw new Error('webinarId y text son requeridos');
       }
 
       console.log('Saving transcript for webinar:', webinarId);
-      console.log('Transcript text:', text);
       
       const { data: existingData, error: existingError } = await supabaseClient
         .from('webinar_transcriptions')
@@ -47,17 +55,11 @@ serve(async (req) => {
         .eq('webinar_id', webinarId)
         .maybeSingle();
 
-      if (existingError) {
-        console.error('Error checking existing transcription:', existingError);
-        throw existingError;
-      }
+      if (existingError) throw existingError;
 
       let result;
-      
       if (existingData) {
-        console.log('Updating existing transcription:', existingData.id);
         const newTranscript = existingData.transcript + " " + text;
-        
         const { error: updateError } = await supabaseClient
           .from('webinar_transcriptions')
           .update({ 
@@ -66,14 +68,9 @@ serve(async (req) => {
           })
           .eq('id', existingData.id);
 
-        if (updateError) {
-          console.error('Error updating transcription:', updateError);
-          throw updateError;
-        }
-        
+        if (updateError) throw updateError;
         result = { id: existingData.id, transcript: newTranscript };
       } else {
-        console.log('Creating new transcription for webinar:', webinarId);
         const { data: insertData, error: insertError } = await supabaseClient
           .from('webinar_transcriptions')
           .insert({
@@ -84,25 +81,18 @@ serve(async (req) => {
           .select()
           .single();
 
-        if (insertError) {
-          console.error('Error inserting transcription:', insertError);
-          throw insertError;
-        }
-        
+        if (insertError) throw insertError;
         result = insertData;
       }
-
-      console.log('Successfully saved transcript:', result);
 
       return new Response(
         JSON.stringify({ success: true, data: result }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      );
     }
 
+    // Handle ask question action
     if (action === 'ask_question') {
-      console.log('Processing question for webinar:', webinarId);
-      
       const { data: transcription, error: transcriptionError } = await supabaseClient
         .from('webinar_transcriptions')
         .select('transcript')
@@ -111,17 +101,9 @@ serve(async (req) => {
         .limit(1)
         .maybeSingle();
 
-      if (transcriptionError) {
-        console.error('Error fetching transcription:', transcriptionError);
-        throw transcriptionError;
-      }
+      if (transcriptionError) throw transcriptionError;
+      if (!transcription) throw new Error('No hay transcripción disponible');
 
-      if (!transcription) {
-        throw new Error('No hay transcripción disponible para este webinar');
-      }
-
-      console.log('Sending request to OpenAI');
-      
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -148,7 +130,6 @@ serve(async (req) => {
       });
 
       const data = await response.json();
-      
       if (!data.choices?.[0]?.message?.content) {
         throw new Error('No se pudo generar una respuesta');
       }
@@ -156,71 +137,63 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ answer: data.choices[0].message.content }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      );
     }
 
+    // Handle audio transcription action
     if (action === 'transcribe_audio') {
-      console.log('Starting audio transcription...');
-      
-      if (!audio) {
-        throw new Error('No audio data provided');
+      if (!audio) throw new Error('No audio data provided');
+
+      // Convert base64 to binary
+      const binary = atob(audio);
+      const array = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        array[i] = binary.charCodeAt(i);
       }
 
-      try {
-        // Base64 to binary
-        const binary = atob(audio);
-        const array = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-          array[i] = binary.charCodeAt(i);
-        }
+      // Prepare form data for Whisper API
+      const formData = new FormData();
+      const audioBlob = new Blob([array], { type: 'audio/webm' });
+      formData.append('file', audioBlob, 'audio.webm');
+      formData.append('model', 'whisper-1');
+      formData.append('language', 'es');
 
-        // Create form data
-        const formData = new FormData();
-        formData.append('file', new Blob([array], { type: 'audio/webm' }), 'audio.webm');
-        formData.append('model', 'whisper-1');
-        formData.append('language', 'es');
+      console.log('Sending request to Whisper API...');
+      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
+        },
+        body: formData,
+      });
 
-        console.log('Sending request to Whisper API...');
-        
-        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
-          },
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const error = await response.text();
-          console.error('Whisper API error:', error);
-          throw new Error('Error al transcribir el audio: ' + error);
-        }
-
-        const result = await response.json();
-        console.log('Transcription result:', result);
-
-        return new Response(
-          JSON.stringify({ text: result.text }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      } catch (audioError) {
-        console.error('Error processing audio:', audioError);
-        throw new Error('Error processing audio: ' + audioError.message);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Whisper API error:', errorText);
+        throw new Error(`Error en la transcripción: ${errorText}`);
       }
+
+      const result = await response.json();
+      console.log('Transcription successful:', result);
+
+      return new Response(
+        JSON.stringify({ text: result.text }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    throw new Error('Invalid action')
+    throw new Error('Invalid action');
   } catch (error) {
     console.error('Error in edge function:', error);
     return new Response(
       JSON.stringify({ 
-        error: error.message,
+        error: error.message || 'Unknown error',
         details: error.toString()
       }),
       { 
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       }
-    )
+    );
   }
-})
+});
