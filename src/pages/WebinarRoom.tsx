@@ -20,9 +20,6 @@ import {
   LocalParticipant,
   LocalTrackPublication,
   LocalAudioTrack,
-  VoiceAgentOptions,
-  Agent,
-  createAudioAnalyser,
 } from 'livekit-client';
 import "@livekit/components-styles";
 import { motion } from "framer-motion";
@@ -130,17 +127,8 @@ const WebinarContent = ({
       try {
         console.log('[Transcription] Setting up transcription...');
         
-        // Verificar tracks de audio
-        const tracks = Array.from(localParticipant.tracks.values());
-        console.log('[Transcription] Available tracks:', tracks.map(t => ({
-          kind: t.kind,
-          trackName: t.trackName,
-          isEnabled: t.isEnabled,
-          isMuted: t.isMuted
-        })));
-
-        const audioTrack = tracks
-          .find(pub => pub.kind === Track.Kind.Audio && pub.track instanceof LocalAudioTrack)
+        const audioTrack = Array.from(localParticipant.tracks.values())
+          .find(pub => pub.kind === Track.Kind.Audio)
           ?.track as LocalAudioTrack | undefined;
 
         if (!audioTrack) {
@@ -154,14 +142,17 @@ const WebinarContent = ({
           enabled: audioTrack.mediaStreamTrack.enabled
         });
 
-        // Crear contexto de audio si no existe
-        if (!audioContext) {
-          const newAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-          setAudioContext(newAudioContext);
-        }
+        // Crear contexto de audio
+        const newAudioContext = new AudioContext();
+        setAudioContext(newAudioContext);
 
-        // Configurar analizador de audio para VAD
-        const analyser = createAudioAnalyser(audioTrack);
+        // Crear source y analyzer
+        const source = newAudioContext.createMediaStreamSource(audioTrack.mediaStream);
+        const analyser = newAudioContext.createAnalyser();
+        source.connect(analyser);
+
+        // Configurar analyzer
+        analyser.fftSize = 2048;
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
 
@@ -187,8 +178,9 @@ const WebinarContent = ({
             }
 
             // Aquí enviaríamos el audio a la Edge Function para procesarlo con Whisper
+            const audioData = audioTrack.getMediaStreamTrack();
             // Por ahora simulamos la recepción de texto
-            transcriptionBuffer += "Transcripción en proceso... ";
+            transcriptionBuffer = "Audio detectado y listo para procesar";
             await handleTranscript(transcriptionBuffer);
             transcriptionBuffer = "";
           } else if (!silenceTimer) {
@@ -213,6 +205,8 @@ const WebinarContent = ({
         return () => {
           clearInterval(processInterval);
           if (silenceTimer) clearTimeout(silenceTimer);
+          source.disconnect();
+          analyser.disconnect();
           if (audioContext) audioContext.close();
           setIsTranscribing(false);
           console.log('[Transcription] Cleanup completed');
