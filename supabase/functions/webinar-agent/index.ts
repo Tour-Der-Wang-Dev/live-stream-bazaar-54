@@ -169,8 +169,16 @@ serve(async (req) => {
         throw new Error('No audio data provided');
       }
 
+      // Base64 to binary
+      const binary = atob(audio);
+      const array = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        array[i] = binary.charCodeAt(i);
+      }
+
+      // Create form data
       const formData = new FormData();
-      formData.append('file', new Blob([new TextEncoder().encode(audio)], { type: 'audio/webm' }), 'audio.webm');
+      formData.append('file', new Blob([array], { type: 'audio/webm' }), 'audio.webm');
       formData.append('model', 'whisper-1');
       formData.append('language', 'es');
 
