@@ -154,37 +154,50 @@ serve(async (req) => {
     }
 
     if (action === 'transcribe_audio') {
-      const audioData = await req.arrayBuffer();
+      console.log('Starting audio transcription...');
       
-      console.log('Transcribing audio with Whisper...');
+      const { audio } = await req.json();
+      if (!audio) {
+        throw new Error('No audio data provided');
+      }
+
+      // Convert base64 to Blob
+      const binaryStr = atob(audio);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: 'audio/webm' });
+
+      // Create form data
+      const formData = new FormData();
+      formData.append('file', blob, 'audio.webm');
+      formData.append('model', 'whisper-1');
+      formData.append('language', 'es');
+
+      console.log('Sending request to Whisper API...');
       
       const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
         },
-        body: new FormData(request.form({
-          file: new Blob([audioData], { type: 'audio/wav' }),
-          model: 'whisper-1',
-          language: 'es',
-          response_format: 'json'
-        }))
+        body: formData,
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        console.error('Error from Whisper API:', error);
-        throw new Error('Error al transcribir el audio');
+        const error = await response.text();
+        console.error('Whisper API error:', error);
+        throw new Error('Error al transcribir el audio: ' + error);
       }
 
-      const { text } = await response.json();
-      
-      console.log('Transcription received:', text);
+      const result = await response.json();
+      console.log('Transcription result:', result);
 
       return new Response(
-        JSON.stringify({ text }),
+        JSON.stringify({ text: result.text }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      );
     }
 
     throw new Error('Invalid action')

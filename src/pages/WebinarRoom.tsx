@@ -164,7 +164,7 @@ const WebinarContent = ({
         processor.onaudioprocess = async (e) => {
           analyser.getByteFrequencyData(dataArray);
           const average = dataArray.reduce((a, b) => a + b) / bufferLength;
-          const hasVoice = average > 30;
+          const hasVoice = average > 15; // Reducido el umbral para mayor sensibilidad
 
           if (hasVoice) {
             lastVoiceActivity = Date.now();
@@ -185,34 +185,35 @@ const WebinarContent = ({
                 offset += buffer.length;
               });
 
-              // Convert to 16-bit PCM
-              const pcmBuffer = new Int16Array(combinedBuffer.length);
-              for (let i = 0; i < combinedBuffer.length; i++) {
-                const s = Math.max(-1, Math.min(1, combinedBuffer[i]));
-                pcmBuffer[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-              }
+              // Convert to base64
+              const audioBlob = new Blob([combinedBuffer.buffer], { type: 'audio/webm' });
+              const reader = new FileReader();
+              reader.onloadend = async () => {
+                const base64Audio = (reader.result as string).split(',')[1];
+                
+                try {
+                  const { data, error } = await supabase.functions.invoke('webinar-agent', {
+                    body: {
+                      action: 'transcribe_audio',
+                      audio: base64Audio
+                    }
+                  });
 
-              try {
-                const wavBlob = new Blob([pcmBuffer], { type: 'audio/wav' });
-                const { data, error } = await supabase.functions.invoke('webinar-agent', {
-                  body: {
-                    action: 'transcribe_audio',
-                    audio: wavBlob
+                  if (error) throw error;
+                  if (data?.text) {
+                    console.log('[Transcription] Received text:', data.text);
+                    await handleTranscript(data.text);
                   }
-                });
-
-                if (error) throw error;
-                if (data.text) {
-                  await handleTranscript(data.text);
+                } catch (error) {
+                  console.error('[Transcription] Error processing audio:', error);
+                  toast({
+                    variant: "destructive",
+                    title: "Error en la transcripción",
+                    description: "No se pudo procesar el audio"
+                  });
                 }
-              } catch (error) {
-                console.error('[Transcription] Error processing audio:', error);
-                toast({
-                  variant: "destructive",
-                  title: "Error en la transcripción",
-                  description: "No se pudo procesar el audio"
-                });
-              }
+              };
+              reader.readAsDataURL(audioBlob);
             }
             audioBuffer = [];
           }
