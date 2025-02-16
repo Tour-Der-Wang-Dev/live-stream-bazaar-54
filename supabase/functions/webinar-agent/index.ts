@@ -15,13 +15,9 @@ serve(async (req) => {
   let requestBody;
   
   try {
-    // Clone the request to safely read the body
-    const clonedReq = req.clone();
-    const bodyText = await clonedReq.text();
-    console.log('Raw request body:', bodyText);
-    
-    requestBody = JSON.parse(bodyText);
-    console.log('Parsed request body:', { action: requestBody.action });
+    // Consumir el body una sola vez
+    requestBody = await req.json();
+    console.log('Request body:', requestBody);
 
     const { action, webinarId, text, question, audio } = requestBody;
     console.log('Processing action:', action);
@@ -218,7 +214,7 @@ serve(async (req) => {
       }),
       { 
         status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
       }
     )
   }
