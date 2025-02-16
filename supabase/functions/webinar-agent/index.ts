@@ -15,8 +15,22 @@ serve(async (req) => {
   let requestBody;
   
   try {
-    // Consumir el body una sola vez
-    requestBody = await req.json();
+    // Leer el cuerpo como stream primero
+    const reader = req.body?.getReader();
+    if (!reader) {
+      throw new Error('No request body available');
+    }
+
+    // Leer todo el contenido
+    let result = '';
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      result += new TextDecoder().decode(value);
+    }
+
+    // Parsear el JSON después de tener todo el contenido
+    requestBody = JSON.parse(result);
     console.log('Request body:', requestBody);
 
     const { action, webinarId, text, question, audio } = requestBody;
