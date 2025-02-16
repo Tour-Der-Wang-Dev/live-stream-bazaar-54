@@ -7,6 +7,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Función auxiliar para convertir ArrayBuffer a base64 en chunks
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const chunks: string[] = [];
+  const chunkSize = 8192;
+  const uint8Array = new Uint8Array(buffer);
+  
+  for (let i = 0; i < uint8Array.length; i += chunkSize) {
+    const chunk = uint8Array.slice(i, i + chunkSize);
+    chunks.push(String.fromCharCode.apply(null, chunk as unknown as number[]));
+  }
+  
+  return btoa(chunks.join(''));
+}
+
 serve(async (req) => {
   try {
     // Handle preflight requests
@@ -164,11 +178,9 @@ serve(async (req) => {
         );
       }
 
-      // Convert audio to base64
+      // Convert audio to base64 using chunked processing
       const audioBuffer = await ttsResponse.arrayBuffer();
-      const audioBase64 = btoa(
-        String.fromCharCode(...new Uint8Array(audioBuffer))
-      );
+      const audioBase64 = arrayBufferToBase64(audioBuffer);
 
       return new Response(
         JSON.stringify({ 
