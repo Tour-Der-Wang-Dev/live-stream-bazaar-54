@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3"
 
@@ -11,20 +12,13 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
-  let requestBody;
-  
   try {
     // Using text() method directly which is more reliable in Deno
     const rawBody = await req.text();
     console.log('Raw body received:', rawBody);
     
-    try {
-      requestBody = JSON.parse(rawBody);
-      console.log('Parsed request body:', requestBody);
-    } catch (parseError) {
-      console.error('Error parsing JSON:', parseError);
-      throw new Error('Invalid JSON in request body');
-    }
+    const requestBody = JSON.parse(rawBody);
+    console.log('Parsed request body:', requestBody);
 
     const { action, webinarId, text, question, audio } = requestBody;
     console.log('Processing action:', action);
@@ -172,42 +166,47 @@ serve(async (req) => {
         throw new Error('No audio data provided');
       }
 
-      // Base64 to binary
-      const binary = atob(audio);
-      const array = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        array[i] = binary.charCodeAt(i);
+      try {
+        // Base64 to binary
+        const binary = atob(audio);
+        const array = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          array[i] = binary.charCodeAt(i);
+        }
+
+        // Create form data
+        const formData = new FormData();
+        formData.append('file', new Blob([array], { type: 'audio/webm' }), 'audio.webm');
+        formData.append('model', 'whisper-1');
+        formData.append('language', 'es');
+
+        console.log('Sending request to Whisper API...');
+        
+        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
+          },
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const error = await response.text();
+          console.error('Whisper API error:', error);
+          throw new Error('Error al transcribir el audio: ' + error);
+        }
+
+        const result = await response.json();
+        console.log('Transcription result:', result);
+
+        return new Response(
+          JSON.stringify({ text: result.text }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } catch (audioError) {
+        console.error('Error processing audio:', audioError);
+        throw new Error('Error processing audio: ' + audioError.message);
       }
-
-      // Create form data
-      const formData = new FormData();
-      formData.append('file', new Blob([array], { type: 'audio/webm' }), 'audio.webm');
-      formData.append('model', 'whisper-1');
-      formData.append('language', 'es');
-
-      console.log('Sending request to Whisper API...');
-      
-      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
-        },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const error = await response.text();
-        console.error('Whisper API error:', error);
-        throw new Error('Error al transcribir el audio: ' + error);
-      }
-
-      const result = await response.json();
-      console.log('Transcription result:', result);
-
-      return new Response(
-        JSON.stringify({ text: result.text }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
     }
 
     throw new Error('Invalid action')
@@ -216,8 +215,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         error: error.message,
-        details: error.toString(),
-        requestBody: requestBody || 'No body parsed'
+        details: error.toString()
       }),
       { 
         status: 400,
