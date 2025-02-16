@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3"
 
@@ -15,23 +14,17 @@ serve(async (req) => {
   let requestBody;
   
   try {
-    // Leer el cuerpo como stream primero
-    const reader = req.body?.getReader();
-    if (!reader) {
-      throw new Error('No request body available');
+    // Using text() method directly which is more reliable in Deno
+    const rawBody = await req.text();
+    console.log('Raw body received:', rawBody);
+    
+    try {
+      requestBody = JSON.parse(rawBody);
+      console.log('Parsed request body:', requestBody);
+    } catch (parseError) {
+      console.error('Error parsing JSON:', parseError);
+      throw new Error('Invalid JSON in request body');
     }
-
-    // Leer todo el contenido
-    let result = '';
-    while (true) {
-      const {done, value} = await reader.read();
-      if (done) break;
-      result += new TextDecoder().decode(value);
-    }
-
-    // Parsear el JSON después de tener todo el contenido
-    requestBody = JSON.parse(result);
-    console.log('Request body:', requestBody);
 
     const { action, webinarId, text, question, audio } = requestBody;
     console.log('Processing action:', action);
