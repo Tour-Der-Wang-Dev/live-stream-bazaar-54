@@ -15,11 +15,11 @@ serve(async (req) => {
   let requestBody;
   
   try {
-    // Read the raw body data first
-    const bodyText = await req.text();
+    // Clone the request to safely read the body
+    const clonedReq = req.clone();
+    const bodyText = await clonedReq.text();
     console.log('Raw request body:', bodyText);
     
-    // Parse the JSON after reading the text
     requestBody = JSON.parse(bodyText);
     console.log('Parsed request body:', { action: requestBody.action });
 
