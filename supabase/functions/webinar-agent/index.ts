@@ -14,10 +14,12 @@ serve(async (req) => {
   }
 
   try {
-    // Clone the request body before consuming it
-    const body = await req.clone().json();
-    const { action, webinarId, text, question, audio } = body;
-    console.log('Received request:', { action, webinarId, text, question });
+    // Read the body once at the beginning
+    const requestBody = await req.json();
+    console.log('Received request body:', requestBody);
+
+    const { action, webinarId, text, question, audio } = requestBody;
+    console.log('Processing action:', action);
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
