@@ -14,7 +14,9 @@ serve(async (req) => {
   }
 
   try {
-    const { action, webinarId, text, question } = await req.json()
+    // Clone the request body before consuming it
+    const body = await req.clone().json();
+    const { action, webinarId, text, question, audio } = body;
     console.log('Received request:', { action, webinarId, text, question });
 
     const supabaseClient = createClient(
@@ -123,7 +125,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'gpt-4',
           messages: [
             {
               role: 'system',
@@ -156,7 +158,6 @@ serve(async (req) => {
     if (action === 'transcribe_audio') {
       console.log('Starting audio transcription...');
       
-      const { audio } = await req.json();
       if (!audio) {
         throw new Error('No audio data provided');
       }
