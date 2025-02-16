@@ -1,5 +1,4 @@
-
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useParams, useNavigate } from "react-router-dom";
@@ -76,7 +75,10 @@ const WebinarContent = ({
   const { toast } = useToast();
   const { localParticipant } = useLocalParticipant();
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const chunks = useRef<Blob[]>([]);
+  const recordingTimeout = useRef<NodeJS.Timeout>();
 
   useEffect(() => {
     if (!localParticipant) {
@@ -142,98 +144,70 @@ const WebinarContent = ({
           enabled: audioTrack.mediaStreamTrack.enabled
         });
 
-        const newAudioContext = new AudioContext({ sampleRate: 16000 });
-        setAudioContext(newAudioContext);
+        const recorder = new MediaRecorder(audioTrack.mediaStream, {
+          mimeType: 'audio/webm;codecs=opus'
+        });
 
-        const source = newAudioContext.createMediaStreamSource(audioTrack.mediaStream);
-        const processor = newAudioContext.createScriptProcessor(4096, 1, 1);
-        const analyser = newAudioContext.createAnalyser();
-        
-        source.connect(analyser);
-        analyser.connect(processor);
-        processor.connect(newAudioContext.destination);
-
-        analyser.fftSize = 2048;
-        const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-        
-        let audioBuffer: Float32Array[] = [];
-        let lastVoiceActivity = Date.now();
-        let isRecording = false;
-
-        processor.onaudioprocess = async (e) => {
-          analyser.getByteFrequencyData(dataArray);
-          const average = dataArray.reduce((a, b) => a + b) / bufferLength;
-          const hasVoice = average > 15; // Reducido el umbral para mayor sensibilidad
-
-          if (hasVoice) {
-            lastVoiceActivity = Date.now();
-            if (!isRecording) {
-              isRecording = true;
-              audioBuffer = [];
-              console.log('[Transcription] Started recording');
-            }
-            audioBuffer.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-          } else if (isRecording && Date.now() - lastVoiceActivity > 1000) {
-            isRecording = false;
-            if (audioBuffer.length > 0) {
-              console.log('[Transcription] Stopped recording, processing audio...');
-              const combinedBuffer = new Float32Array(audioBuffer.reduce((acc, curr) => acc + curr.length, 0));
-              let offset = 0;
-              audioBuffer.forEach(buffer => {
-                combinedBuffer.set(buffer, offset);
-                offset += buffer.length;
-              });
-
-              // Convert to base64
-              const audioBlob = new Blob([combinedBuffer.buffer], { type: 'audio/webm' });
-              const reader = new FileReader();
-              reader.onloadend = async () => {
-                const base64Audio = (reader.result as string).split(',')[1];
-                
-                try {
-                  const { data, error } = await supabase.functions.invoke('webinar-agent', {
-                    body: {
-                      action: 'transcribe_audio',
-                      audio: base64Audio
-                    }
-                  });
-
-                  if (error) throw error;
-                  if (data?.text) {
-                    console.log('[Transcription] Received text:', data.text);
-                    await handleTranscript(data.text);
-                  }
-                } catch (error) {
-                  console.error('[Transcription] Error processing audio:', error);
-                  toast({
-                    variant: "destructive",
-                    title: "Error en la transcripción",
-                    description: "No se pudo procesar el audio"
-                  });
-                }
-              };
-              reader.readAsDataURL(audioBlob);
-            }
-            audioBuffer = [];
+        recorder.ondataavailable = async (event) => {
+          if (event.data.size > 0) {
+            chunks.current.push(event.data);
           }
         };
 
+        recorder.onstop = async () => {
+          console.log('[Transcription] Processing recorded audio...');
+          const audioBlob = new Blob(chunks.current, { type: 'audio/webm;codecs=opus' });
+          chunks.current = [];
+
+          // Convert to base64
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const base64Audio = (reader.result as string).split(',')[1];
+            
+            try {
+              const { data, error } = await supabase.functions.invoke('webinar-agent', {
+                body: {
+                  action: 'transcribe_audio',
+                  audio: base64Audio
+                }
+              });
+
+              if (error) throw error;
+              if (data?.text) {
+                console.log('[Transcription] Received text:', data.text);
+                await handleTranscript(data.text);
+              }
+
+              // Reiniciar grabación después de procesar
+              if (isRecording) {
+                startNewRecording(recorder);
+              }
+            } catch (error) {
+              console.error('[Transcription] Error processing audio:', error);
+              toast({
+                variant: "destructive",
+                title: "Error en la transcripción",
+                description: "No se pudo procesar el audio"
+              });
+              
+              // Reintentar grabación en caso de error
+              if (isRecording) {
+                startNewRecording(recorder);
+              }
+            }
+          };
+          reader.readAsDataURL(audioBlob);
+        };
+
+        setMediaRecorder(recorder);
         setIsTranscribing(true);
+        startNewRecording(recorder);
+
         toast({
           title: "Transcripción iniciada",
           description: "El audio está siendo procesado"
         });
 
-        return () => {
-          processor.disconnect();
-          analyser.disconnect();
-          source.disconnect();
-          if (newAudioContext.state !== 'closed') {
-            newAudioContext.close();
-          }
-          setIsTranscribing(false);
-        };
       } catch (error: any) {
         console.error('[Transcription] Setup error:', error);
         toast({
@@ -242,6 +216,23 @@ const WebinarContent = ({
           description: "Error al configurar la transcripción: " + error.message
         });
       }
+    };
+
+    const startNewRecording = (recorder: MediaRecorder) => {
+      if (recordingTimeout.current) {
+        clearTimeout(recordingTimeout.current);
+      }
+
+      chunks.current = [];
+      recorder.start();
+      console.log('[Transcription] Started new recording segment');
+      
+      // Detener la grabación después de 10 segundos
+      recordingTimeout.current = setTimeout(() => {
+        if (recorder.state === 'recording') {
+          recorder.stop();
+        }
+      }, 10000);
     };
 
     const interval = setInterval(() => {
@@ -257,12 +248,16 @@ const WebinarContent = ({
 
     return () => {
       clearInterval(interval);
-      if (audioContext && audioContext.state !== 'closed') {
-        audioContext.close();
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+      }
+      if (recordingTimeout.current) {
+        clearTimeout(recordingTimeout.current);
       }
       setIsTranscribing(false);
+      setIsRecording(false);
     };
-  }, [localParticipant, webinarId]);
+  }, [localParticipant, webinarId, isRecording]);
 
   const handleAskQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
