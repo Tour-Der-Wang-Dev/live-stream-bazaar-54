@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3"
 import "https://deno.land/x/xhr@0.1.0/mod.ts"
@@ -148,6 +149,40 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({ answer: data.choices[0].message.content }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    if (action === 'transcribe_audio') {
+      const audioData = await req.arrayBuffer();
+      
+      console.log('Transcribing audio with Whisper...');
+      
+      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
+        },
+        body: new FormData(request.form({
+          file: new Blob([audioData], { type: 'audio/wav' }),
+          model: 'whisper-1',
+          language: 'es',
+          response_format: 'json'
+        }))
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Error from Whisper API:', error);
+        throw new Error('Error al transcribir el audio');
+      }
+
+      const { text } = await response.json();
+      
+      console.log('Transcription received:', text);
+
+      return new Response(
+        JSON.stringify({ text }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
