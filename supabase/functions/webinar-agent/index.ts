@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3"
 
@@ -11,10 +12,16 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  let requestBody;
+  
   try {
-    // Read the body once at the beginning
-    const requestBody = await req.json();
-    console.log('Received request body:', { action: requestBody.action });
+    // Read the raw body data first
+    const bodyText = await req.text();
+    console.log('Raw request body:', bodyText);
+    
+    // Parse the JSON after reading the text
+    requestBody = JSON.parse(bodyText);
+    console.log('Parsed request body:', { action: requestBody.action });
 
     const { action, webinarId, text, question, audio } = requestBody;
     console.log('Processing action:', action);
@@ -162,13 +169,8 @@ serve(async (req) => {
         throw new Error('No audio data provided');
       }
 
-      // Prepare the audio data for Whisper API
-      const audioData = await fetch(`data:audio/webm;base64,${audio}`);
-      const audioBlob = await audioData.blob();
-
-      // Create form data using native Deno FormData
       const formData = new FormData();
-      formData.append('file', audioBlob, 'audio.webm');
+      formData.append('file', new Blob([new TextEncoder().encode(audio)], { type: 'audio/webm' }), 'audio.webm');
       formData.append('model', 'whisper-1');
       formData.append('language', 'es');
 
@@ -203,7 +205,8 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         error: error.message,
-        details: error.toString()
+        details: error.toString(),
+        requestBody: requestBody || 'No body parsed'
       }),
       { 
         status: 400,
