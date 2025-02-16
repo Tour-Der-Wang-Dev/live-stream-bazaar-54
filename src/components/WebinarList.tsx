@@ -9,34 +9,70 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
+import { useToast } from "@/components/ui/use-toast";
 
 const fetchWebinars = async (): Promise<Webinar[]> => {
-  const { data, error } = await supabase
-    .from('webinars')
-    .select('*')
-    .order('start_time', { ascending: true });
+  try {
+    console.log('Fetching webinars...');
+    const { data, error } = await supabase
+      .from('webinars')
+      .select('*')
+      .order('start_time', { ascending: true });
 
-  if (error) {
-    console.error('Error al obtener webinars:', error);
+    if (error) {
+      console.error('Error fetching webinars:', error);
+      throw new Error(`Error al obtener webinars: ${error.message}`);
+    }
+
+    if (!data) {
+      console.log('No webinars found');
+      return [];
+    }
+
+    console.log('Webinars fetched successfully:', data);
+    return data.map(webinar => ({
+      id: webinar.id,
+      title: webinar.title,
+      description: webinar.description,
+      startTime: new Date(webinar.start_time),
+      hostName: webinar.host_name,
+      roomName: webinar.room_name
+    }));
+  } catch (error) {
+    console.error('Unexpected error fetching webinars:', error);
     throw error;
   }
-
-  return (data || []).map(webinar => ({
-    id: webinar.id,
-    title: webinar.title,
-    description: webinar.description,
-    startTime: new Date(webinar.start_time),
-    hostName: webinar.host_name,
-    roomName: webinar.room_name
-  }));
 };
 
 const WebinarList = () => {
   const navigate = useNavigate();
-  const { data: webinars, isLoading } = useQuery({
+  const { toast } = useToast();
+  
+  const { data: webinars, isLoading, error } = useQuery({
     queryKey: ['webinars'],
-    queryFn: fetchWebinars
+    queryFn: fetchWebinars,
+    retry: 2,
+    onError: (error) => {
+      console.error('Query error:', error);
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los webinars. Por favor, intenta de nuevo más tarde.",
+        variant: "destructive"
+      });
+    }
   });
+
+  if (error) {
+    return (
+      <Card className="max-w-2xl mx-auto p-8 text-center">
+        <h3 className="text-xl font-semibold mb-2">Error al cargar los webinars</h3>
+        <p className="text-gray-500 mb-4">Por favor, intenta de nuevo más tarde</p>
+        <Button onClick={() => window.location.reload()} variant="outline">
+          Reintentar
+        </Button>
+      </Card>
+    );
+  }
 
   if (isLoading) {
     return (
