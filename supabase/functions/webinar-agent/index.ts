@@ -14,13 +14,10 @@ serve(async (req) => {
       return new Response('ok', { headers: corsHeaders })
     }
 
-    // Clone request for safety
-    const reqClone = req.clone();
-    
-    // Parse request body
+    // Parse request body once at the beginning
     let requestBody;
     try {
-      const text = await reqClone.text();
+      const text = await req.text();
       requestBody = JSON.parse(text);
       console.log('Request body parsed:', { action: requestBody.action });
     } catch (e) {
