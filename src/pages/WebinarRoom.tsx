@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -9,7 +10,6 @@ import {
   LocalUserChoices,
   useLocalParticipant,
   RoomAudioRenderer,
-  useTracks,
 } from "@livekit/components-react";
 import {
   Track,
@@ -142,74 +142,96 @@ const WebinarContent = ({
           enabled: audioTrack.mediaStreamTrack.enabled
         });
 
-        // Crear contexto de audio
-        const newAudioContext = new AudioContext();
+        const newAudioContext = new AudioContext({ sampleRate: 16000 });
         setAudioContext(newAudioContext);
 
-        // Crear source y analyzer
         const source = newAudioContext.createMediaStreamSource(audioTrack.mediaStream);
+        const processor = newAudioContext.createScriptProcessor(4096, 1, 1);
         const analyser = newAudioContext.createAnalyser();
+        
         source.connect(analyser);
+        analyser.connect(processor);
+        processor.connect(newAudioContext.destination);
 
-        // Configurar analyzer
         analyser.fftSize = 2048;
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
+        
+        let audioBuffer: Float32Array[] = [];
+        let lastVoiceActivity = Date.now();
+        let isRecording = false;
 
-        // Función para detectar actividad de voz
-        const checkVoiceActivity = () => {
+        processor.onaudioprocess = async (e) => {
           analyser.getByteFrequencyData(dataArray);
           const average = dataArray.reduce((a, b) => a + b) / bufferLength;
-          return average > 30; // Umbral de actividad de voz
-        };
+          const hasVoice = average > 30;
 
-        // Iniciar proceso de transcripción
-        setIsTranscribing(true);
-        let transcriptionBuffer = "";
-        let silenceTimer: NodeJS.Timeout | null = null;
-
-        const processAudioChunk = async () => {
-          if (!isTranscribing) return;
-
-          if (checkVoiceActivity()) {
-            if (silenceTimer) {
-              clearTimeout(silenceTimer);
-              silenceTimer = null;
+          if (hasVoice) {
+            lastVoiceActivity = Date.now();
+            if (!isRecording) {
+              isRecording = true;
+              audioBuffer = [];
+              console.log('[Transcription] Started recording');
             }
+            audioBuffer.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+          } else if (isRecording && Date.now() - lastVoiceActivity > 1000) {
+            isRecording = false;
+            if (audioBuffer.length > 0) {
+              console.log('[Transcription] Stopped recording, processing audio...');
+              const combinedBuffer = new Float32Array(audioBuffer.reduce((acc, curr) => acc + curr.length, 0));
+              let offset = 0;
+              audioBuffer.forEach(buffer => {
+                combinedBuffer.set(buffer, offset);
+                offset += buffer.length;
+              });
 
-            // Aquí enviaríamos el audio a la Edge Function para procesarlo con Whisper
-            const audioData = audioTrack.mediaStreamTrack; // Corregido: usando mediaStreamTrack en lugar de getMediaStreamTrack()
-            // Por ahora simulamos la recepción de texto
-            transcriptionBuffer = "Audio detectado y listo para procesar";
-            await handleTranscript(transcriptionBuffer);
-            transcriptionBuffer = "";
-          } else if (!silenceTimer) {
-            silenceTimer = setTimeout(() => {
-              if (transcriptionBuffer.trim()) {
-                handleTranscript(transcriptionBuffer);
-                transcriptionBuffer = "";
+              // Convert to 16-bit PCM
+              const pcmBuffer = new Int16Array(combinedBuffer.length);
+              for (let i = 0; i < combinedBuffer.length; i++) {
+                const s = Math.max(-1, Math.min(1, combinedBuffer[i]));
+                pcmBuffer[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
               }
-            }, 1500); // Esperar 1.5s de silencio antes de procesar
+
+              try {
+                const wavBlob = new Blob([pcmBuffer], { type: 'audio/wav' });
+                const { data, error } = await supabase.functions.invoke('webinar-agent', {
+                  body: {
+                    action: 'transcribe_audio',
+                    audio: wavBlob
+                  }
+                });
+
+                if (error) throw error;
+                if (data.text) {
+                  await handleTranscript(data.text);
+                }
+              } catch (error) {
+                console.error('[Transcription] Error processing audio:', error);
+                toast({
+                  variant: "destructive",
+                  title: "Error en la transcripción",
+                  description: "No se pudo procesar el audio"
+                });
+              }
+            }
+            audioBuffer = [];
           }
         };
 
-        // Iniciar bucle de procesamiento
-        const processInterval = setInterval(processAudioChunk, 100);
-
-        console.log('[Transcription] Setup completed');
+        setIsTranscribing(true);
         toast({
           title: "Transcripción iniciada",
           description: "El audio está siendo procesado"
         });
 
         return () => {
-          clearInterval(processInterval);
-          if (silenceTimer) clearTimeout(silenceTimer);
-          source.disconnect();
+          processor.disconnect();
           analyser.disconnect();
-          if (audioContext) audioContext.close();
+          source.disconnect();
+          if (newAudioContext.state !== 'closed') {
+            newAudioContext.close();
+          }
           setIsTranscribing(false);
-          console.log('[Transcription] Cleanup completed');
         };
       } catch (error: any) {
         console.error('[Transcription] Setup error:', error);
@@ -221,18 +243,12 @@ const WebinarContent = ({
       }
     };
 
-    // Intentar configurar la transcripción cada segundo hasta que funcione
     const interval = setInterval(() => {
       const hasAudioTrack = Array.from(localParticipant.tracks.values()).some(
         pub => pub.kind === Track.Kind.Audio
       );
 
-      console.log('[Transcription] Checking for audio track:', {
-        hasAudioTrack,
-        trackCount: localParticipant.tracks.size
-      });
-
-      if (hasAudioTrack) {
+      if (hasAudioTrack && !isTranscribing) {
         setupTranscription();
         clearInterval(interval);
       }
@@ -240,11 +256,10 @@ const WebinarContent = ({
 
     return () => {
       clearInterval(interval);
-      setIsTranscribing(false);
-      if (audioContext) {
+      if (audioContext && audioContext.state !== 'closed') {
         audioContext.close();
-        setAudioContext(null);
       }
+      setIsTranscribing(false);
     };
   }, [localParticipant, webinarId]);
 
