@@ -301,9 +301,9 @@ const WebinarContent = ({
         </div>
       </div>
       
-      <div className="h-2/5 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 shadow-lg">
+      <div className="h-1/2 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 shadow-lg">
         <div className="container mx-auto p-6 h-full flex gap-6">
-          <div className="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 rounded-xl p-4 shadow-inner">
+          <div className="w-[400px] flex flex-col bg-gray-50 dark:bg-gray-900 rounded-xl p-4 shadow-inner">
             <div className="flex items-center gap-2 mb-3">
               <Mic className="w-5 h-5 text-blue-500" />
               <h3 className="text-lg font-semibold">Transcripción en vivo</h3>
@@ -315,35 +315,37 @@ const WebinarContent = ({
             </ScrollArea>
           </div>
 
-          <div className="w-[500px] flex flex-col bg-gray-50 dark:bg-gray-900 rounded-xl p-4 shadow-inner">
+          <div className="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 rounded-xl p-4 shadow-inner">
             <div className="flex items-center gap-2 mb-3">
-              <MessageCircle className="w-5 h-5 text-green-500" />
-              <h3 className="text-lg font-semibold">Asistente del Webinar</h3>
+              <MessageCircle className="w-6 h-6 text-green-500" />
+              <h3 className="text-xl font-semibold">Asistente del Webinar</h3>
             </div>
-            <ScrollArea className="flex-1 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 mb-4">
+            <ScrollArea className="flex-1 p-6 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 mb-4">
               {answer ? (
-                <div className="p-6 bg-green-50 dark:bg-gray-700 rounded-lg border border-green-100 dark:border-gray-600">
-                  <p className="text-gray-700 dark:text-gray-300 text-base leading-relaxed">{answer}</p>
+                <div className="p-8 bg-green-50 dark:bg-gray-700 rounded-lg border border-green-100 dark:border-gray-600">
+                  <p className="text-gray-700 dark:text-gray-300 text-lg leading-relaxed">
+                    {answer}
+                  </p>
                 </div>
               ) : (
-                <p className="text-gray-500 dark:text-gray-400 text-center mt-4">
+                <p className="text-gray-500 dark:text-gray-400 text-center mt-4 text-lg">
                   Haz una pregunta sobre el contenido del webinar
                 </p>
               )}
             </ScrollArea>
 
-            <form onSubmit={handleAskQuestion} className="flex gap-2">
+            <form onSubmit={handleAskQuestion} className="flex gap-3">
               <Input
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 placeholder="Haz una pregunta sobre el webinar..."
                 disabled={isAskingQuestion}
-                className="bg-white dark:bg-gray-800"
+                className="bg-white dark:bg-gray-800 text-lg py-6"
               />
               <Button 
                 type="submit" 
                 disabled={isAskingQuestion}
-                className="bg-green-600 hover:bg-green-700 text-white"
+                className="bg-green-600 hover:bg-green-700 text-white px-8 text-lg"
               >
                 Preguntar
               </Button>
