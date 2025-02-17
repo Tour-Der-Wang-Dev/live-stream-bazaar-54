@@ -1,4 +1,3 @@
-
 import { useEffect, useState, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -80,6 +79,13 @@ const WebinarContent = ({
   const [isRecording, setIsRecording] = useState(false);
   const chunks = useRef<Blob[]>([]);
   const recordingTimeout = useRef<NodeJS.Timeout>();
+  const transcriptRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (transcriptRef.current) {
+      transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
+    }
+  }, [transcript]);
 
   useEffect(() => {
     if (!localParticipant) {
@@ -308,7 +314,10 @@ const WebinarContent = ({
               <Mic className="w-5 h-5 text-blue-500" />
               <h3 className="text-lg font-semibold">Transcripción en vivo</h3>
             </div>
-            <ScrollArea className="flex-1 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+            <ScrollArea 
+              className="flex-1 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
+              ref={transcriptRef}
+            >
               <p className="whitespace-pre-wrap text-gray-700 dark:text-gray-300 text-base leading-relaxed">
                 {transcript || "La transcripción aparecerá aquí cuando comience..."}
               </p>
