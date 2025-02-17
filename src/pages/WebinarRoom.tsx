@@ -121,7 +121,8 @@ const WebinarContent = ({
         }
 
         console.log('[Transcription] Saved successfully:', data);
-        setTranscript(prev => prev + " " + text.trim());
+        const timestamp = new Date().toLocaleTimeString();
+        setTranscript(prev => `${prev}\n[${timestamp}] ${text.trim()}`);
       } catch (error: any) {
         console.error('[Transcription] Error saving:', error);
         toast({
