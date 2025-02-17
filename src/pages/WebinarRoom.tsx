@@ -1,3 +1,4 @@
+
 import { useEffect, useState, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -227,12 +228,12 @@ const WebinarContent = ({
       recorder.start();
       console.log('[Transcription] Started new recording segment');
       
-      // Detener la grabación después de 10 segundos
+      // Reducir el tiempo de grabación a 5 segundos para actualizaciones más frecuentes
       recordingTimeout.current = setTimeout(() => {
         if (recorder.state === 'recording') {
           recorder.stop();
         }
-      }, 10000);
+      }, 5000);
     };
 
     const interval = setInterval(() => {
@@ -308,21 +309,21 @@ const WebinarContent = ({
               <h3 className="text-lg font-semibold">Transcripción en vivo</h3>
             </div>
             <ScrollArea className="flex-1 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-              <p className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+              <p className="whitespace-pre-wrap text-gray-700 dark:text-gray-300 text-base leading-relaxed">
                 {transcript || "La transcripción aparecerá aquí cuando comience..."}
               </p>
             </ScrollArea>
           </div>
 
-          <div className="w-[400px] flex flex-col bg-gray-50 dark:bg-gray-900 rounded-xl p-4 shadow-inner">
+          <div className="w-[500px] flex flex-col bg-gray-50 dark:bg-gray-900 rounded-xl p-4 shadow-inner">
             <div className="flex items-center gap-2 mb-3">
               <MessageCircle className="w-5 h-5 text-green-500" />
               <h3 className="text-lg font-semibold">Asistente del Webinar</h3>
             </div>
             <ScrollArea className="flex-1 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 mb-4">
               {answer ? (
-                <div className="p-4 bg-green-50 dark:bg-gray-700 rounded-lg border border-green-100 dark:border-gray-600">
-                  <p className="text-gray-700 dark:text-gray-300">{answer}</p>
+                <div className="p-6 bg-green-50 dark:bg-gray-700 rounded-lg border border-green-100 dark:border-gray-600">
+                  <p className="text-gray-700 dark:text-gray-300 text-base leading-relaxed">{answer}</p>
                 </div>
               ) : (
                 <p className="text-gray-500 dark:text-gray-400 text-center mt-4">
