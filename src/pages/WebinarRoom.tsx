@@ -80,6 +80,7 @@ const WebinarContent = ({
   const chunks = useRef<Blob[]>([]);
   const recordingTimeout = useRef<NodeJS.Timeout>();
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const hasSetupTranscription = useRef(false);
 
   useEffect(() => {
     if (transcriptRef.current) {
@@ -88,14 +89,21 @@ const WebinarContent = ({
   }, [transcript]);
 
   useEffect(() => {
-    if (!localParticipant) {
-      console.log('[Transcription] No local participant yet');
+    if (!localParticipant || hasSetupTranscription.current) {
+      return;
+    }
+
+    const hasAudioTrack = Array.from(localParticipant.tracks.values()).some(
+      pub => pub.kind === Track.Kind.Audio
+    );
+
+    if (!hasAudioTrack) {
       return;
     }
     
     console.log('[Transcription] Local participant ready:', {
       identity: localParticipant.identity,
-      hasAudioTrack: Array.from(localParticipant.tracks.values()).some(pub => pub.kind === Track.Kind.Audio),
+      hasAudioTrack,
       trackCount: localParticipant.tracks.size
     });
 
@@ -137,6 +145,10 @@ const WebinarContent = ({
     };
 
     const setupTranscription = async () => {
+      if (isTranscribing || !hasAudioTrack) {
+        return;
+      }
+
       try {
         console.log('[Transcription] Setting up transcription...');
         
@@ -238,6 +250,7 @@ const WebinarContent = ({
         setMediaRecorder(recorder);
         setIsTranscribing(true);
         setIsRecording(true);
+        hasSetupTranscription.current = true;
         startNewRecording(recorder);
 
         toast({
@@ -272,19 +285,9 @@ const WebinarContent = ({
       }, 30000);
     };
 
-    const interval = setInterval(() => {
-      const hasAudioTrack = Array.from(localParticipant.tracks.values()).some(
-        pub => pub.kind === Track.Kind.Audio
-      );
-
-      if (hasAudioTrack && !isTranscribing) {
-        setupTranscription();
-        clearInterval(interval);
-      }
-    }, 1000);
+    setupTranscription();
 
     return () => {
-      clearInterval(interval);
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         mediaRecorder.stop();
       }
@@ -293,8 +296,9 @@ const WebinarContent = ({
       }
       setIsTranscribing(false);
       setIsRecording(false);
+      hasSetupTranscription.current = false;
     };
-  }, [localParticipant, webinarId, isRecording]);
+  }, [localParticipant]);
 
   const handleAskQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
