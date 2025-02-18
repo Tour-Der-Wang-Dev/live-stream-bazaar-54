@@ -124,7 +124,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'gpt-4o-mini',
+          model: 'gpt-4',
           messages: [
             {
               role: 'system',
@@ -153,86 +153,82 @@ serve(async (req) => {
         throw new Error('No se pudo generar una respuesta');
       }
 
-      // Generate audio response using OpenAI TTS
-      const ttsResponse = await fetch('https://api.openai.com/v1/audio/speech', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'tts-1',
-          input: data.choices[0].message.content,
-          voice: 'alloy',
-          response_format: 'mp3',
-        }),
-      });
-
-      if (!ttsResponse.ok) {
-        console.error('TTS API error:', await ttsResponse.text());
-        // Return text only if TTS fails
-        return new Response(
-          JSON.stringify({ 
-            answer: data.choices[0].message.content,
-            audio: null 
-          }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      // Convert audio to base64 using improved chunked processing
-      const audioBuffer = await ttsResponse.arrayBuffer();
-      const audioBase64 = arrayBufferToBase64(audioBuffer);
-
       return new Response(
-        JSON.stringify({ 
-          answer: data.choices[0].message.content,
-          audio: audioBase64
-        }),
+        JSON.stringify({ answer: data.choices[0].message.content }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     // Handle audio transcription action
     if (action === 'transcribe_audio') {
-      if (!audio) throw new Error('No audio data provided');
-
-      // Convert base64 to binary
-      const binary = atob(audio);
-      const array = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        array[i] = binary.charCodeAt(i);
+      if (!audio || typeof audio !== 'string' || audio.trim() === '') {
+        console.error('Invalid audio data:', { 
+          hasAudio: !!audio, 
+          type: typeof audio,
+          length: audio ? audio.length : 0 
+        });
+        return new Response(
+          JSON.stringify({ 
+            error: 'No audio data provided',
+            details: 'Audio data is missing or invalid'
+          }),
+          { 
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        );
       }
 
-      // Prepare form data for Whisper API
-      const formData = new FormData();
-      const audioBlob = new Blob([array], { type: 'audio/webm' });
-      formData.append('file', audioBlob, 'audio.webm');
-      formData.append('model', 'whisper-1');
-      formData.append('language', 'es');
+      try {
+        // Convert base64 to binary
+        const binary = atob(audio);
+        const array = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          array[i] = binary.charCodeAt(i);
+        }
 
-      console.log('Sending request to Whisper API...');
-      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
-        },
-        body: formData,
-      });
+        // Prepare form data for Whisper API
+        const formData = new FormData();
+        const audioBlob = new Blob([array], { type: 'audio/webm' });
+        formData.append('file', audioBlob, 'audio.webm');
+        formData.append('model', 'whisper-1');
+        formData.append('language', 'es');
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Whisper API error:', errorText);
-        throw new Error(`Error en la transcripción: ${errorText}`);
+        console.log('Sending request to Whisper API...');
+        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${Deno.env.get('OPENAI_API_KEY')}`,
+          },
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Whisper API error:', errorText);
+          throw new Error(`Error en la transcripción: ${errorText}`);
+        }
+
+        const result = await response.json();
+        console.log('Transcription successful:', result);
+
+        return new Response(
+          JSON.stringify({ text: result.text }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } catch (error) {
+        console.error('Error processing audio:', error);
+        return new Response(
+          JSON.stringify({ 
+            error: 'Error processing audio',
+            details: error.message
+          }),
+          { 
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        );
       }
-
-      const result = await response.json();
-      console.log('Transcription successful:', result);
-
-      return new Response(
-        JSON.stringify({ text: result.text }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
     }
 
     throw new Error('Invalid action');
