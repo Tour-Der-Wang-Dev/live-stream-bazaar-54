@@ -122,7 +122,10 @@ const WebinarContent = ({
 
         console.log('[Transcription] Saved successfully:', data);
         const timestamp = new Date().toLocaleTimeString();
-        setTranscript(prev => `${prev}\n[${timestamp}] ${text.trim()}`);
+        setTranscript(prev => {
+          const newEntry = `[${timestamp}] ${text.trim()}`;
+          return prev ? `${prev}\n${newEntry}` : newEntry;
+        });
       } catch (error: any) {
         console.error('[Transcription] Error saving:', error);
         toast({
@@ -167,7 +170,6 @@ const WebinarContent = ({
           const audioBlob = new Blob(chunks.current, { type: 'audio/webm;codecs=opus' });
           chunks.current = [];
 
-          // Convert to base64
           const reader = new FileReader();
           reader.onloadend = async () => {
             const base64Audio = (reader.result as string).split(',')[1];
@@ -186,7 +188,6 @@ const WebinarContent = ({
                 await handleTranscript(data.text);
               }
 
-              // Reiniciar grabación después de procesar
               if (isRecording) {
                 startNewRecording(recorder);
               }
@@ -198,7 +199,6 @@ const WebinarContent = ({
                 description: "No se pudo procesar el audio"
               });
               
-              // Reintentar grabación en caso de error
               if (isRecording) {
                 startNewRecording(recorder);
               }
@@ -209,6 +209,7 @@ const WebinarContent = ({
 
         setMediaRecorder(recorder);
         setIsTranscribing(true);
+        setIsRecording(true);
         startNewRecording(recorder);
 
         toast({
@@ -235,7 +236,6 @@ const WebinarContent = ({
       recorder.start();
       console.log('[Transcription] Started new recording segment');
       
-      // Reducir el tiempo de grabación a 5 segundos para actualizaciones más frecuentes
       recordingTimeout.current = setTimeout(() => {
         if (recorder.state === 'recording') {
           recorder.stop();
