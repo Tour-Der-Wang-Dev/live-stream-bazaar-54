@@ -74,13 +74,10 @@ const WebinarContent = ({
   const [isAskingQuestion, setIsAskingQuestion] = useState(false);
   const { toast } = useToast();
   const { localParticipant } = useLocalParticipant();
-  const [isTranscribing, setIsTranscribing] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
   const chunks = useRef<Blob[]>([]);
   const recordingTimeout = useRef<NodeJS.Timeout>();
   const transcriptRef = useRef<HTMLDivElement>(null);
-  const hasSetupTranscription = useRef(false);
 
   useEffect(() => {
     if (transcriptRef.current) {
@@ -89,214 +86,111 @@ const WebinarContent = ({
   }, [transcript]);
 
   useEffect(() => {
-    if (!localParticipant || hasSetupTranscription.current) {
+    if (!localParticipant) return;
+
+    const audioTrack = Array.from(localParticipant.tracks.values())
+      .find(pub => pub.kind === Track.Kind.Audio)
+      ?.track as LocalAudioTrack | undefined;
+
+    if (!audioTrack) {
+      console.warn('[Transcription] No audio track found');
       return;
     }
 
-    const hasAudioTrack = Array.from(localParticipant.tracks.values()).some(
-      pub => pub.kind === Track.Kind.Audio
-    );
+    console.log('[Transcription] Setting up audio track');
 
-    if (!hasAudioTrack) {
-      return;
-    }
-    
-    console.log('[Transcription] Local participant ready:', {
-      identity: localParticipant.identity,
-      hasAudioTrack,
-      trackCount: localParticipant.tracks.size
+    const recorder = new MediaRecorder(audioTrack.mediaStream, {
+      mimeType: 'audio/webm;codecs=opus',
+      audioBitsPerSecond: 128000
     });
 
-    const handleTranscript = async (text: string) => {
-      if (!text.trim()) {
-        console.log('[Transcription] Empty transcript received, skipping');
-        return;
-      }
-
-      console.log('[Transcription] Processing text:', text.trim());
-      try {
-        const { data, error } = await supabase.functions.invoke('webinar-agent', {
-          body: {
-            action: 'save_transcript',
-            webinarId,
-            text: text.trim()
-          }
-        });
-
-        if (error) {
-          console.error('[Transcription] Error from edge function:', error);
-          throw error;
-        }
-
-        console.log('[Transcription] Saved successfully:', data);
-        const timestamp = new Date().toLocaleTimeString();
-        setTranscript(prev => {
-          const newEntry = `[${timestamp}] ${text.trim()}`;
-          return prev ? `${prev}\n${newEntry}` : newEntry;
-        });
-      } catch (error: any) {
-        console.error('[Transcription] Error saving:', error);
-        toast({
-          variant: "destructive",
-          title: "Error al procesar transcripción",
-          description: error.message || "No se pudo guardar la transcripción"
-        });
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        chunks.current.push(event.data);
       }
     };
 
-    const setupTranscription = async () => {
-      if (isTranscribing || !hasAudioTrack) {
+    recorder.onstop = async () => {
+      const audioBlob = new Blob(chunks.current, { type: 'audio/webm;codecs=opus' });
+      chunks.current = [];
+
+      if (audioBlob.size === 0) {
+        console.log('[Transcription] No audio data, starting new recording');
+        startRecording(recorder);
         return;
       }
 
-      try {
-        console.log('[Transcription] Setting up transcription...');
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64Audio = (reader.result as string).split(',')[1];
         
-        const audioTrack = Array.from(localParticipant.tracks.values())
-          .find(pub => pub.kind === Track.Kind.Audio)
-          ?.track as LocalAudioTrack | undefined;
+        try {
+          const { data, error } = await supabase.functions.invoke('webinar-agent', {
+            body: {
+              action: 'transcribe_audio',
+              audio: base64Audio
+            }
+          });
 
-        if (!audioTrack) {
-          console.warn('[Transcription] No audio track found');
-          return;
+          if (error) throw error;
+          
+          if (data?.text) {
+            const timestamp = new Date().toLocaleTimeString();
+            setTranscript(prev => {
+              const newEntry = `[${timestamp}] ${data.text.trim()}`;
+              return prev ? `${prev}\n${newEntry}` : newEntry;
+            });
+          }
+        } catch (error) {
+          console.error('[Transcription] Error:', error);
+          toast({
+            variant: "destructive",
+            title: "Error en la transcripción",
+            description: "No se pudo procesar el audio"
+          });
         }
 
-        console.log('[Transcription] Found audio track:', {
-          trackName: audioTrack.mediaStreamTrack.label,
-          state: audioTrack.mediaStreamTrack.readyState,
-          enabled: audioTrack.mediaStreamTrack.enabled
-        });
+        startRecording(recorder);
+      };
 
-        const recorder = new MediaRecorder(audioTrack.mediaStream, {
-          mimeType: 'audio/webm;codecs=opus',
-          audioBitsPerSecond: 128000
-        });
-
-        recorder.ondataavailable = async (event) => {
-          if (event.data.size > 0) {
-            console.log('[Transcription] Received audio chunk of size:', event.data.size);
-            chunks.current.push(event.data);
-          }
-        };
-
-        recorder.onstop = async () => {
-          if (chunks.current.length === 0) {
-            console.log('[Transcription] No audio chunks available, skipping');
-            if (isRecording) {
-              startNewRecording(recorder);
-            }
-            return;
-          }
-
-          console.log('[Transcription] Processing recorded audio...');
-          const audioBlob = new Blob(chunks.current, { type: 'audio/webm;codecs=opus' });
-          console.log('[Transcription] Created audio blob of size:', audioBlob.size);
-          chunks.current = [];
-
-          const reader = new FileReader();
-          reader.onloadend = async () => {
-            const base64Audio = (reader.result as string).split(',')[1];
-            if (!base64Audio) {
-              console.error('[Transcription] Failed to convert audio to base64');
-              if (isRecording) {
-                startNewRecording(recorder);
-              }
-              return;
-            }
-
-            console.log('[Transcription] Audio converted to base64, length:', base64Audio.length);
-            
-            try {
-              const { data, error } = await supabase.functions.invoke('webinar-agent', {
-                body: {
-                  action: 'transcribe_audio',
-                  audio: base64Audio
-                }
-              });
-
-              if (error) throw error;
-              if (data?.text) {
-                console.log('[Transcription] Received text:', data.text);
-                await handleTranscript(data.text);
-              }
-
-              if (isRecording) {
-                startNewRecording(recorder);
-              }
-            } catch (error) {
-              console.error('[Transcription] Error processing audio:', error);
-              toast({
-                variant: "destructive",
-                title: "Error en la transcripción",
-                description: "No se pudo procesar el audio"
-              });
-              
-              if (isRecording) {
-                startNewRecording(recorder);
-              }
-            }
-          };
-
-          reader.onerror = (error) => {
-            console.error('[Transcription] Error reading audio blob:', error);
-            if (isRecording) {
-              startNewRecording(recorder);
-            }
-          };
-
-          reader.readAsDataURL(audioBlob);
-        };
-
-        setMediaRecorder(recorder);
-        setIsTranscribing(true);
-        setIsRecording(true);
-        hasSetupTranscription.current = true;
-        startNewRecording(recorder);
-
-        toast({
-          title: "Transcripción iniciada",
-          description: "El audio está siendo procesado"
-        });
-
-      } catch (error: any) {
-        console.error('[Transcription] Setup error:', error);
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Error al configurar la transcripción: " + error.message
-        });
-      }
+      reader.readAsDataURL(audioBlob);
     };
 
-    const startNewRecording = (recorder: MediaRecorder) => {
+    const startRecording = (rec: MediaRecorder) => {
       if (recordingTimeout.current) {
         clearTimeout(recordingTimeout.current);
       }
 
+      if (rec.state === 'recording') {
+        rec.stop();
+      }
+
       chunks.current = [];
-      recorder.start();
-      console.log('[Transcription] Started new recording segment');
-      
+      rec.start();
+      console.log('[Transcription] Started recording');
+
       recordingTimeout.current = setTimeout(() => {
-        if (recorder.state === 'recording') {
-          console.log('[Transcription] Stopping recording segment');
-          recorder.stop();
+        if (rec.state === 'recording') {
+          rec.stop();
         }
       }, 30000);
     };
 
-    setupTranscription();
+    setMediaRecorder(recorder);
+    startRecording(recorder);
+
+    toast({
+      title: "Transcripción iniciada",
+      description: "El audio está siendo procesado"
+    });
 
     return () => {
-      if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
+      if (recorder.state === 'recording') {
+        recorder.stop();
       }
       if (recordingTimeout.current) {
         clearTimeout(recordingTimeout.current);
       }
-      setIsTranscribing(false);
-      setIsRecording(false);
-      hasSetupTranscription.current = false;
     };
   }, [localParticipant]);
 
