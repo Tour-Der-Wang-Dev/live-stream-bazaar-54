@@ -240,7 +240,7 @@ const WebinarContent = ({
         if (recorder.state === 'recording') {
           recorder.stop();
         }
-      }, 5000);
+      }, 30000);
     };
 
     const interval = setInterval(() => {
