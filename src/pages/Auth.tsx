@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { motion } from "framer-motion";
+import { AlertCircle } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -18,6 +20,7 @@ const Auth = () => {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [isTeacher, setIsTeacher] = useState(false);
+  const [proToken, setProToken] = useState(""); // Token para usuarios Pro
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,6 +28,22 @@ const Auth = () => {
 
     try {
       if (isLogin) {
+        // Primero verificamos si el usuario es Pro
+        const { data: proUser, error: proError } = await supabase
+          .from('pro_users')
+          .select('*')
+          .eq('email', email)
+          .single();
+
+        if (proError || !proUser) {
+          toast({
+            variant: "destructive",
+            title: "Acceso denegado",
+            description: "Solo usuarios Pro pueden acceder a esta aplicación.",
+          });
+          return;
+        }
+
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
@@ -33,6 +52,22 @@ const Auth = () => {
         if (error) throw error;
         navigate("/");
       } else {
+        // Para el registro, verificamos el token Pro
+        const { data: proToken, error: tokenError } = await supabase
+          .from('pro_tokens')
+          .select('*')
+          .eq('token', proToken)
+          .single();
+
+        if (tokenError || !proToken) {
+          toast({
+            variant: "destructive",
+            title: "Token inválido",
+            description: "Se requiere un token Pro válido para registrarse.",
+          });
+          return;
+        }
+
         const { error: signUpError, data } = await supabase.auth.signUp({
           email,
           password,
@@ -41,11 +76,24 @@ const Auth = () => {
               first_name: firstName,
               last_name: lastName,
               is_teacher: isTeacher,
+              is_pro: true,
             },
           },
         });
 
         if (signUpError) throw signUpError;
+
+        // Crear entrada en pro_users
+        const { error: proError } = await supabase
+          .from('pro_users')
+          .insert([
+            {
+              email,
+              user_id: data.user?.id,
+            }
+          ]);
+
+        if (proError) throw proError;
 
         // Update profile
         const { error: updateError } = await supabase
@@ -54,6 +102,7 @@ const Auth = () => {
             first_name: firstName,
             last_name: lastName,
             is_teacher: isTeacher,
+            is_pro: true,
           })
           .eq('id', data.user?.id);
 
@@ -61,7 +110,7 @@ const Auth = () => {
 
         toast({
           title: "¡Registro exitoso!",
-          description: "Ya puedes iniciar sesión con tu cuenta.",
+          description: "Ya puedes iniciar sesión con tu cuenta Pro.",
         });
         setIsLogin(true);
       }
@@ -86,7 +135,7 @@ const Auth = () => {
       >
         <Card className="p-8">
           <h1 className="text-3xl font-bold text-center mb-8">
-            {isLogin ? "Iniciar Sesión" : "Registro"}
+            {isLogin ? "Iniciar Sesión" : "Registro"} Pro
           </h1>
           <form onSubmit={handleAuth} className="space-y-4">
             <div>
@@ -125,6 +174,14 @@ const Auth = () => {
                     required
                   />
                 </div>
+                <div>
+                  <Input
+                    placeholder="Token Pro"
+                    value={proToken}
+                    onChange={(e) => setProToken(e.target.value)}
+                    required
+                  />
+                </div>
                 <div className="flex items-center space-x-2">
                   <input
                     type="checkbox"
@@ -158,6 +215,13 @@ const Auth = () => {
               {isLogin ? "Regístrate" : "Inicia sesión"}
             </button>
           </p>
+
+          <Alert variant="info" className="mt-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Esta aplicación es exclusiva para usuarios Pro.
+            </AlertDescription>
+          </Alert>
         </Card>
       </motion.div>
     </div>
