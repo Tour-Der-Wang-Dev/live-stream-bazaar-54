@@ -156,23 +156,43 @@ const WebinarContent = ({
         });
 
         const recorder = new MediaRecorder(audioTrack.mediaStream, {
-          mimeType: 'audio/webm;codecs=opus'
+          mimeType: 'audio/webm;codecs=opus',
+          audioBitsPerSecond: 128000
         });
 
         recorder.ondataavailable = async (event) => {
           if (event.data.size > 0) {
+            console.log('[Transcription] Received audio chunk of size:', event.data.size);
             chunks.current.push(event.data);
           }
         };
 
         recorder.onstop = async () => {
+          if (chunks.current.length === 0) {
+            console.log('[Transcription] No audio chunks available, skipping');
+            if (isRecording) {
+              startNewRecording(recorder);
+            }
+            return;
+          }
+
           console.log('[Transcription] Processing recorded audio...');
           const audioBlob = new Blob(chunks.current, { type: 'audio/webm;codecs=opus' });
+          console.log('[Transcription] Created audio blob of size:', audioBlob.size);
           chunks.current = [];
 
           const reader = new FileReader();
           reader.onloadend = async () => {
             const base64Audio = (reader.result as string).split(',')[1];
+            if (!base64Audio) {
+              console.error('[Transcription] Failed to convert audio to base64');
+              if (isRecording) {
+                startNewRecording(recorder);
+              }
+              return;
+            }
+
+            console.log('[Transcription] Audio converted to base64, length:', base64Audio.length);
             
             try {
               const { data, error } = await supabase.functions.invoke('webinar-agent', {
@@ -204,6 +224,14 @@ const WebinarContent = ({
               }
             }
           };
+
+          reader.onerror = (error) => {
+            console.error('[Transcription] Error reading audio blob:', error);
+            if (isRecording) {
+              startNewRecording(recorder);
+            }
+          };
+
           reader.readAsDataURL(audioBlob);
         };
 
@@ -238,6 +266,7 @@ const WebinarContent = ({
       
       recordingTimeout.current = setTimeout(() => {
         if (recorder.state === 'recording') {
+          console.log('[Transcription] Stopping recording segment');
           recorder.stop();
         }
       }, 30000);
