@@ -9,6 +9,7 @@ import {
   LocalUserChoices,
   useLocalParticipant,
   RoomAudioRenderer,
+  useRoom,
 } from "@livekit/components-react";
 import {
   Track,
@@ -28,7 +29,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/components/ui/use-toast";
 import { useQuery } from "@tanstack/react-query";
-import { MessageCircle, Mic, Calendar, Clock } from "lucide-react";
+import { MessageCircle, Mic, Calendar, Clock, Video, VideoOff } from "lucide-react";
 
 const fetchWebinar = async (id: string): Promise<Webinar | null> => {
   console.log('Fetching webinar with ID:', id);
@@ -72,8 +73,10 @@ const WebinarContent = ({
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [isAskingQuestion, setIsAskingQuestion] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const { toast } = useToast();
   const { localParticipant } = useLocalParticipant();
+  const room = useRoom();
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const recordingTimeout = useRef<NodeJS.Timeout>();
@@ -94,6 +97,55 @@ const WebinarContent = ({
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
+  };
+
+  const toggleRecording = async () => {
+    try {
+      if (!room) {
+        throw new Error('La sala no está disponible');
+      }
+
+      if (isRecording) {
+        const { error } = await supabase.functions.invoke('webinar-agent', {
+          body: {
+            action: 'stop_recording',
+            webinarId,
+            roomName: room.name
+          }
+        });
+
+        if (error) throw error;
+
+        setIsRecording(false);
+        toast({
+          title: "Grabación detenida",
+          description: "La grabación se ha detenido correctamente"
+        });
+      } else {
+        const { error } = await supabase.functions.invoke('webinar-agent', {
+          body: {
+            action: 'start_recording',
+            webinarId,
+            roomName: room.name
+          }
+        });
+
+        if (error) throw error;
+
+        setIsRecording(true);
+        toast({
+          title: "Grabación iniciada",
+          description: "La videoconferencia está siendo grabada"
+        });
+      }
+    } catch (error: any) {
+      console.error('Error al gestionar la grabación:', error);
+      toast({
+        variant: "destructive",
+        title: "Error en la grabación",
+        description: error.message || "No se pudo gestionar la grabación"
+      });
+    }
   };
 
   useEffect(() => {
@@ -312,7 +364,27 @@ const WebinarContent = ({
     <div className="h-screen flex flex-col bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800">
       <RoomAudioRenderer />
       <div className="flex-1 p-4">
-        <div className="rounded-2xl overflow-hidden shadow-xl bg-white dark:bg-gray-800">
+        <div className="relative rounded-2xl overflow-hidden shadow-xl bg-white dark:bg-gray-800">
+          <div className="absolute top-4 right-4 z-10">
+            <Button
+              onClick={toggleRecording}
+              variant={isRecording ? "destructive" : "default"}
+              size="sm"
+              className="flex items-center gap-2"
+            >
+              {isRecording ? (
+                <>
+                  <VideoOff className="w-4 h-4" />
+                  Detener Grabación
+                </>
+              ) : (
+                <>
+                  <Video className="w-4 h-4" />
+                  Iniciar Grabación
+                </>
+              )}
+            </Button>
+          </div>
           <VideoConference />
         </div>
       </div>
