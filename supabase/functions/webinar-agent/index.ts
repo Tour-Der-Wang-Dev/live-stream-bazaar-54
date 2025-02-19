@@ -1,36 +1,18 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3"
+import { AccessToken } from 'https://esm.sh/livekit-server-sdk@1.2.7'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Modified chunked base64 conversion
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  const chunkSize = 1024;
-  
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.slice(i, Math.min(i + chunkSize, bytes.length));
-    for (let j = 0; j < chunk.length; j++) {
-      binary += String.fromCharCode(chunk[j]);
-    }
-  }
-  
-  return btoa(binary);
-}
-
 serve(async (req) => {
   try {
-    // Handle preflight requests
     if (req.method === 'OPTIONS') {
       return new Response('ok', { headers: corsHeaders })
     }
 
-    // Parse request body once at the beginning
     let requestBody;
     try {
       const text = await req.text();
@@ -41,10 +23,10 @@ serve(async (req) => {
       throw new Error('Invalid JSON in request body');
     }
 
-    const { action, webinarId, text, question, audio } = requestBody;
+    const { action, webinarId, roomName } = requestBody;
 
-    // Initialize Supabase client
-    const supabaseClient = createClient(
+    // Inicializar cliente de Supabase
+    const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       {
@@ -54,6 +36,76 @@ serve(async (req) => {
       }
     )
 
+    // Configuración de LiveKit
+    const livekitHost = "https://juliawebinars-brslrae2.livekit.cloud";
+    const apiKey = Deno.env.get('LIVEKIT_API_KEY');
+    const apiSecret = Deno.env.get('LIVEKIT_API_SECRET');
+
+    if (!apiKey || !apiSecret) {
+      throw new Error('LiveKit credentials not configured');
+    }
+
+    // Manejar acciones de grabación
+    if (action === 'start_recording') {
+      if (!roomName || !webinarId) {
+        throw new Error('roomName y webinarId son requeridos');
+      }
+
+      const response = await fetch(`${livekitHost}/recordings/start`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          roomName: roomName,
+          options: {
+            output: {
+              format: 'mp4',
+              filepath: `${webinarId}/${new Date().toISOString()}.mp4`,
+            },
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Error starting recording: ${errorText}`);
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, message: 'Recording started' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (action === 'stop_recording') {
+      if (!roomName) {
+        throw new Error('roomName es requerido');
+      }
+
+      const response = await fetch(`${livekitHost}/recordings/stop`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          roomName: roomName,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Error stopping recording: ${errorText}`);
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, message: 'Recording stopped' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Handle save transcript action
     if (action === 'save_transcript') {
       if (!webinarId || !text) {
@@ -62,7 +114,7 @@ serve(async (req) => {
 
       console.log('Saving transcript for webinar:', webinarId);
       
-      const { data: existingData, error: existingError } = await supabaseClient
+      const { data: existingData, error: existingError } = await supabaseAdmin
         .from('webinar_transcriptions')
         .select('*')
         .eq('webinar_id', webinarId)
@@ -73,7 +125,7 @@ serve(async (req) => {
       let result;
       if (existingData) {
         const newTranscript = existingData.transcript + " " + text;
-        const { error: updateError } = await supabaseClient
+        const { error: updateError } = await supabaseAdmin
           .from('webinar_transcriptions')
           .update({ 
             transcript: newTranscript,
@@ -84,7 +136,7 @@ serve(async (req) => {
         if (updateError) throw updateError;
         result = { id: existingData.id, transcript: newTranscript };
       } else {
-        const { data: insertData, error: insertError } = await supabaseClient
+        const { data: insertData, error: insertError } = await supabaseAdmin
           .from('webinar_transcriptions')
           .insert({
             webinar_id: webinarId,
@@ -106,7 +158,7 @@ serve(async (req) => {
 
     // Handle ask question action
     if (action === 'ask_question') {
-      const { data: transcription, error: transcriptionError } = await supabaseClient
+      const { data: transcription, error: transcriptionError } = await supabaseAdmin
         .from('webinar_transcriptions')
         .select('transcript')
         .eq('webinar_id', webinarId)
