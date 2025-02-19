@@ -194,10 +194,10 @@ const WebinarContent = ({
                   return prev ? `${prev}\n${newEntry}` : newEntry;
                 });
 
-                await supabase.from('transcriptions').insert({
+                await supabase.from('webinar_transcriptions').insert({
                   webinar_id: webinarId,
-                  text: data.text.trim(),
-                  timestamp: new Date().toISOString()
+                  transcript: data.text.trim(),
+                  created_at: new Date().toISOString()
                 });
               }
             } catch (error) {
