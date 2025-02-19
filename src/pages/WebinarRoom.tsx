@@ -1,3 +1,4 @@
+
 import { useEffect, useState, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -9,7 +10,7 @@ import {
   LocalUserChoices,
   useLocalParticipant,
   RoomAudioRenderer,
-  useRoom,
+  useLivekitRoom,
 } from "@livekit/components-react";
 import {
   Track,
@@ -76,7 +77,7 @@ const WebinarContent = ({
   const [isRecording, setIsRecording] = useState(false);
   const { toast } = useToast();
   const { localParticipant } = useLocalParticipant();
-  const room = useRoom();
+  const room = useLivekitRoom();
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const recordingTimeout = useRef<NodeJS.Timeout>();
