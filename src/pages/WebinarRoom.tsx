@@ -78,6 +78,7 @@ const WebinarContent = ({
   const chunks = useRef<Blob[]>([]);
   const recordingTimeout = useRef<NodeJS.Timeout>();
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const setupComplete = useRef(false);
 
   useEffect(() => {
     if (transcriptRef.current) {
@@ -86,111 +87,176 @@ const WebinarContent = ({
   }, [transcript]);
 
   useEffect(() => {
-    if (!localParticipant) return;
+    let recorder: MediaRecorder | null = null;
 
-    const audioTrack = Array.from(localParticipant.tracks.values())
-      .find(pub => pub.kind === Track.Kind.Audio)
-      ?.track as LocalAudioTrack | undefined;
+    const setupAudioRecording = async () => {
+      if (!localParticipant || setupComplete.current) return;
 
-    if (!audioTrack) {
-      console.warn('[Transcription] No audio track found');
-      return;
-    }
+      try {
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
-    console.log('[Transcription] Setting up audio track');
+        const audioPublication = Array.from(localParticipant.tracks.values())
+          .find(pub => pub.kind === Track.Kind.Audio);
 
-    const recorder = new MediaRecorder(audioTrack.mediaStream, {
-      mimeType: 'audio/webm;codecs=opus',
-      audioBitsPerSecond: 128000
-    });
-
-    recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        chunks.current.push(event.data);
-      }
-    };
-
-    recorder.onstop = async () => {
-      const audioBlob = new Blob(chunks.current, { type: 'audio/webm;codecs=opus' });
-      chunks.current = [];
-
-      if (audioBlob.size === 0) {
-        console.log('[Transcription] No audio data, starting new recording');
-        startRecording(recorder);
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64Audio = (reader.result as string).split(',')[1];
-        
-        try {
-          const { data, error } = await supabase.functions.invoke('webinar-agent', {
-            body: {
-              action: 'transcribe_audio',
-              audio: base64Audio
-            }
-          });
-
-          if (error) throw error;
-          
-          if (data?.text) {
-            const timestamp = new Date().toLocaleTimeString();
-            setTranscript(prev => {
-              const newEntry = `[${timestamp}] ${data.text.trim()}`;
-              return prev ? `${prev}\n${newEntry}` : newEntry;
-            });
-          }
-        } catch (error) {
-          console.error('[Transcription] Error:', error);
-          toast({
-            variant: "destructive",
-            title: "Error en la transcripción",
-            description: "No se pudo procesar el audio"
-          });
+        if (!audioPublication) {
+          console.error('[Transcription] No se encontró publicación de audio');
+          return;
         }
 
-        startRecording(recorder);
-      };
+        const audioTrack = audioPublication.track as LocalAudioTrack;
+        
+        if (!audioTrack || !audioTrack.mediaStream) {
+          console.error('[Transcription] No se encontró track de audio válido');
+          return;
+        }
 
-      reader.readAsDataURL(audioBlob);
+        console.log('[Transcription] Audio track encontrado:', {
+          id: audioTrack.sid,
+          enabled: audioTrack.isEnabled,
+          muted: audioTrack.isMuted
+        });
+
+        if (!window.MediaRecorder) {
+          throw new Error('MediaRecorder no está soportado en este navegador');
+        }
+
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : 'audio/webm';
+
+        recorder = new MediaRecorder(audioTrack.mediaStream, {
+          mimeType,
+          audioBitsPerSecond: 128000
+        });
+
+        console.log('[Transcription] MediaRecorder creado con configuración:', {
+          mimeType: recorder.mimeType,
+          state: recorder.state
+        });
+
+        recorder.ondataavailable = (event) => {
+          console.log('[Transcription] Datos de audio recibidos:', event.data.size, 'bytes');
+          if (event.data.size > 0) {
+            chunks.current.push(event.data);
+          }
+        };
+
+        recorder.onstop = async () => {
+          if (chunks.current.length === 0) {
+            console.log('[Transcription] No hay datos de audio para procesar');
+            startRecording(recorder!);
+            return;
+          }
+
+          const audioBlob = new Blob(chunks.current, { type: mimeType });
+          console.log('[Transcription] Blob de audio creado:', audioBlob.size, 'bytes');
+          chunks.current = [];
+
+          if (audioBlob.size < 1000) {
+            console.log('[Transcription] Blob demasiado pequeño, ignorando');
+            startRecording(recorder!);
+            return;
+          }
+
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const base64Audio = (reader.result as string).split(',')[1];
+            
+            try {
+              console.log('[Transcription] Enviando audio para transcripción...');
+              const { data, error } = await supabase.functions.invoke('webinar-agent', {
+                body: {
+                  action: 'transcribe_audio',
+                  audio: base64Audio
+                }
+              });
+
+              if (error) {
+                console.error('[Transcription] Error en la función edge:', error);
+                throw error;
+              }
+              
+              if (data?.text) {
+                console.log('[Transcription] Texto recibido:', data.text);
+                const timestamp = new Date().toLocaleTimeString();
+                setTranscript(prev => {
+                  const newEntry = `[${timestamp}] ${data.text.trim()}`;
+                  return prev ? `${prev}\n${newEntry}` : newEntry;
+                });
+              }
+            } catch (error) {
+              console.error('[Transcription] Error:', error);
+              toast({
+                variant: "destructive",
+                title: "Error en la transcripción",
+                description: "No se pudo procesar el audio"
+              });
+            }
+
+            startRecording(recorder!);
+          };
+
+          reader.readAsDataURL(audioBlob);
+        };
+
+        setMediaRecorder(recorder);
+        setupComplete.current = true;
+        startRecording(recorder);
+
+        console.log('[Transcription] Configuración completada');
+        toast({
+          title: "Transcripción iniciada",
+          description: "El audio está siendo procesado"
+        });
+      } catch (error) {
+        console.error('[Transcription] Error en la configuración:', error);
+        toast({
+          variant: "destructive",
+          title: "Error en la transcripción",
+          description: "No se pudo iniciar la grabación de audio"
+        });
+      }
     };
 
     const startRecording = (rec: MediaRecorder) => {
-      if (recordingTimeout.current) {
-        clearTimeout(recordingTimeout.current);
-      }
+      if (!rec) return;
 
-      if (rec.state === 'recording') {
-        rec.stop();
-      }
+      try {
+        if (recordingTimeout.current) {
+          clearTimeout(recordingTimeout.current);
+        }
 
-      chunks.current = [];
-      rec.start();
-      console.log('[Transcription] Started recording');
-
-      recordingTimeout.current = setTimeout(() => {
         if (rec.state === 'recording') {
           rec.stop();
         }
-      }, 30000);
+
+        chunks.current = [];
+        rec.start();
+        console.log('[Transcription] Grabación iniciada');
+
+        recordingTimeout.current = setTimeout(() => {
+          if (rec.state === 'recording') {
+            console.log('[Transcription] Deteniendo grabación por timeout');
+            rec.stop();
+          }
+        }, 10000);
+      } catch (error) {
+        console.error('[Transcription] Error al iniciar grabación:', error);
+      }
     };
 
-    setMediaRecorder(recorder);
-    startRecording(recorder);
-
-    toast({
-      title: "Transcripción iniciada",
-      description: "El audio está siendo procesado"
-    });
+    if (localParticipant) {
+      setupAudioRecording();
+    }
 
     return () => {
-      if (recorder.state === 'recording') {
+      if (recorder && recorder.state === 'recording') {
         recorder.stop();
       }
       if (recordingTimeout.current) {
         clearTimeout(recordingTimeout.current);
       }
+      setupComplete.current = false;
     };
   }, [localParticipant]);
 
