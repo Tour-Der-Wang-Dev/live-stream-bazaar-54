@@ -10,7 +10,7 @@ import {
   LocalUserChoices,
   useLocalParticipant,
   RoomAudioRenderer,
-  useLivekitRoom,
+  useLiveKitRoom,
 } from "@livekit/components-react";
 import {
   Track,
@@ -77,7 +77,7 @@ const WebinarContent = ({
   const [isRecording, setIsRecording] = useState(false);
   const { toast } = useToast();
   const { localParticipant } = useLocalParticipant();
-  const room = useLivekitRoom();
+  const room = useLiveKitRoom();
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const recordingTimeout = useRef<NodeJS.Timeout>();
