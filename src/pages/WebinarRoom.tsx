@@ -86,6 +86,16 @@ const WebinarContent = ({
     }
   }, [transcript]);
 
+  const handleDownloadTranscript = () => {
+    const element = document.createElement("a");
+    const file = new Blob([transcript], {type: 'text/plain'});
+    element.href = URL.createObjectURL(file);
+    element.download = `transcripcion-${webinarId}-${new Date().toISOString()}.txt`;
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
+
   useEffect(() => {
     let recorder: MediaRecorder | null = null;
 
@@ -112,7 +122,6 @@ const WebinarContent = ({
 
         console.log('[Transcription] Audio track encontrado:', {
           id: audioTrack.sid,
-          enabled: audioTrack.isEnabled,
           muted: audioTrack.isMuted
         });
 
@@ -167,7 +176,8 @@ const WebinarContent = ({
               const { data, error } = await supabase.functions.invoke('webinar-agent', {
                 body: {
                   action: 'transcribe_audio',
-                  audio: base64Audio
+                  audio: base64Audio,
+                  webinarId
                 }
               });
 
@@ -182,6 +192,12 @@ const WebinarContent = ({
                 setTranscript(prev => {
                   const newEntry = `[${timestamp}] ${data.text.trim()}`;
                   return prev ? `${prev}\n${newEntry}` : newEntry;
+                });
+
+                await supabase.from('transcriptions').insert({
+                  webinar_id: webinarId,
+                  text: data.text.trim(),
+                  timestamp: new Date().toISOString()
                 });
               }
             } catch (error) {
@@ -258,7 +274,7 @@ const WebinarContent = ({
       }
       setupComplete.current = false;
     };
-  }, [localParticipant]);
+  }, [localParticipant, webinarId]);
 
   const handleAskQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -304,9 +320,19 @@ const WebinarContent = ({
       <div className="h-1/2 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 shadow-lg">
         <div className="container mx-auto p-6 h-full flex gap-6">
           <div className="w-[400px] flex flex-col bg-gray-50 dark:bg-gray-900 rounded-xl p-4 shadow-inner">
-            <div className="flex items-center gap-2 mb-3">
-              <Mic className="w-5 h-5 text-blue-500" />
-              <h3 className="text-lg font-semibold">Transcripción en vivo</h3>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Mic className="w-5 h-5 text-blue-500" />
+                <h3 className="text-lg font-semibold">Transcripción en vivo</h3>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleDownloadTranscript}
+                className="text-sm"
+              >
+                Descargar
+              </Button>
             </div>
             <ScrollArea 
               className="flex-1 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
